@@ -1,0 +1,8 @@
+{
+  "name": "JimboOS",
+  "description": "The ultimate Balatro-themed operating system featuring JAML Search and Wee Joker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

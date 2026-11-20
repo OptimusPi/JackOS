@@ -1,0 +1,192 @@
+@import "jaml-ui/fonts.css";
+@import "tailwindcss";
+
+@theme {
+  --color-bal-red: #fe5f55;
+  --color-bal-blue: #009dff;
+  --color-bal-green: #4bc292;
+  --color-bal-orange: #ff9800;
+  --color-bal-gold: #f5b841;
+  --color-bal-purple: #9e74ce;
+  --color-bal-dark-grey: #36494d;
+  --color-bal-darkest: #182426;
+}
+
+@layer base {
+  body {
+    font-family: 'm6x11plus', monospace;
+    font-weight: 400;
+    font-smooth: never;
+    -webkit-font-smoothing: none;
+    background: #182426;
+    color: #ffffff;
+    overflow: hidden;
+  }
+}
+
+@layer components {
+  /*
+   * Authentic Balatro tactile button mechanics:
+   * - Outer hitbox reserves 4px bottom travel so layout & hover target never shift.
+   * - Hover darkens face (brightness 0.88).
+   * - Press / active sinks 4px onto its bevel and darkens further (brightness 0.74).
+   */
+  .bal-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+    padding: 0 0 4px 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    user-select: none;
+    outline: none;
+    font-family: inherit;
+    line-height: 1;
+  }
+
+  .bal-btn__face {
+    border-radius: 6px;
+    background: var(--bal-face, #ff9800);
+    color: var(--bal-text, #ffffff);
+    border-top: 1px solid rgba(255, 255, 255, 0.24);
+    box-shadow:
+      0 4px 0 var(--bal-deep, #b86600),
+      0 6px 0 rgba(0, 0, 0, 0.45);
+    text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
+    transition:
+      transform 60ms ease,
+      box-shadow 60ms ease,
+      filter 80ms ease;
+  }
+
+  .bal-btn:focus-visible .bal-btn__face {
+    outline: 2px solid #f5b841;
+    outline-offset: 2px;
+  }
+
+  .bal-btn:not(:disabled):hover .bal-btn__face {
+    filter: brightness(0.88);
+  }
+
+  .bal-btn:not(:disabled):active .bal-btn__face,
+  .bal-btn:not(:disabled)[data-pressed='true'] .bal-btn__face {
+    transform: translateY(4px);
+    box-shadow:
+      0 0 0 var(--bal-deep, #b86600),
+      0 2px 0 rgba(0, 0, 0, 0.45);
+    filter: brightness(0.74);
+  }
+
+  .bal-btn:disabled {
+    cursor: not-allowed;
+  }
+
+  .bal-btn:disabled .bal-btn__face {
+    background: #4a585c;
+    color: #9ba8ab;
+    border-top-color: rgba(255, 255, 255, 0.08);
+    box-shadow:
+      0 2px 0 #313b3e,
+      0 4px 0 rgba(0, 0, 0, 0.35);
+    transform: translateY(2px);
+    filter: none;
+  }
+}
+
+@layer utilities {
+  .crt {
+    position: relative;
+  }
+
+  .crt::after {
+    content: " ";
+    display: block;
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.14) 50%),
+      linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+    z-index: 9999;
+    background-size: 100% 3px, 3px 100%;
+    pointer-events: none;
+    opacity: 0.55;
+  }
+
+  .balatro-bg {
+    background: radial-gradient(circle at center, #3a5055 0%, #182426 100%);
+  }
+
+  .balatro-panel {
+    background: #36494d;
+    border-top: 2px solid #b9c2d2;
+    border-left: 2px solid #b9c2d2;
+    border-right: 2px solid #b9c2d2;
+    border-bottom: 2px solid #6f7987;
+    border-radius: 6px;
+    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.55);
+  }
+
+  /* Balatro card edition overlays */
+  .bal-edition-foil::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 4px;
+    background: linear-gradient(
+      125deg,
+      rgba(160, 220, 255, 0) 20%,
+      rgba(160, 225, 255, 0.55) 50%,
+      rgba(255, 255, 255, 0) 80%
+    );
+    mix-blend-mode: color-dodge;
+    pointer-events: none;
+  }
+
+  .bal-edition-holo::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 4px;
+    background: linear-gradient(
+      130deg,
+      rgba(254, 95, 85, 0.35),
+      rgba(0, 157, 255, 0.4),
+      rgba(158, 116, 206, 0.45)
+    );
+    mix-blend-mode: screen;
+    pointer-events: none;
+  }
+
+  .bal-edition-poly::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 4px;
+    background: linear-gradient(
+      120deg,
+      #fe5f5580,
+      #f5b84180,
+      #4bc29280,
+      #009dff80,
+      #9e74ce80
+    );
+    mix-blend-mode: color-dodge;
+    pointer-events: none;
+  }
+
+  .bal-edition-neg {
+    filter: invert(0.92) hue-rotate(180deg) contrast(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bal-card-3d {
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .bal-btn__face {
+    transition: none !important;
+  }
+}
