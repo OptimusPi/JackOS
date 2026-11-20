@@ -46,7 +46,14 @@ export const BalCard: React.FC<BalCardProps> = ({
   const [tilt, setTilt] = useState<{ rx: number; ry: number; gx: number; gy: number } | null>(null);
   const [hovered, setHovered] = useState(false);
 
+  const handlePointerEnter = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse') {
+      setHovered(true);
+    }
+  };
+
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse') return;
     const rect = e.currentTarget.getBoundingClientRect();
     const px = (e.clientX - rect.left) / rect.width;
     const py = (e.clientY - rect.top) / rect.height;
@@ -73,7 +80,7 @@ export const BalCard: React.FC<BalCardProps> = ({
     <div
       className="relative flex flex-col items-center gap-1 select-none group"
       style={{ width: width + 8 }}
-      onPointerEnter={() => setHovered(true)}
+      onPointerEnter={handlePointerEnter}
       onPointerMove={handlePointerMove}
       onPointerLeave={handlePointerLeave}
       onClick={onClick}

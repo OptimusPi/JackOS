@@ -18,27 +18,68 @@ interface DraggableWindowProps {
   isActive?: boolean;
 }
 
+const MOBILE_BREAKPOINT = 768;
+const DOCK_RESERVE_PX = 96;
+const EDGE_MARGIN_PX = 8;
+
+function clampWindowGeometry(
+  rawPos: { x: number; y: number },
+  rawSize: { width: number; height: number }
+): { pos: { x: number; y: number }; size: { width: number; height: number } } {
+  if (typeof window === 'undefined') {
+    return { pos: rawPos, size: rawSize };
+  }
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const isMobile = vw < MOBILE_BREAKPOINT;
+
+  const maxW = Math.max(280, vw - EDGE_MARGIN_PX * 2);
+  const maxH = Math.max(240, vh - DOCK_RESERVE_PX - EDGE_MARGIN_PX);
+
+  const width = isMobile ? maxW : Math.min(rawSize.width, maxW);
+  const height = isMobile ? maxH : Math.min(rawSize.height, maxH);
+
+  const maxX = Math.max(EDGE_MARGIN_PX, vw - width - EDGE_MARGIN_PX);
+  const maxY = Math.max(EDGE_MARGIN_PX, vh - height - DOCK_RESERVE_PX);
+
+  const x = isMobile ? EDGE_MARGIN_PX : Math.min(Math.max(EDGE_MARGIN_PX, rawPos.x), maxX);
+  const y = isMobile ? EDGE_MARGIN_PX : Math.min(Math.max(EDGE_MARGIN_PX, rawPos.y), maxY);
+
+  return { pos: { x, y }, size: { width, height } };
+}
+
 export const DraggableWindow: React.FC<DraggableWindowProps> = ({
   title,
   icon: Icon,
   onClose,
   children,
-  initialPos = { x: 50, y: 50 },
-  initialSize = { width: 640, height: 480 },
+  initialPos = { x: 24, y: 24 },
+  initialSize = { width: 560, height: 480 },
   zIndex,
   onFocus,
   isActive = false,
 }) => {
-  const [pos, setPos] = useState(initialPos);
-  const [size, setSize] = useState(initialSize);
+  const initialClamped = clampWindowGeometry(initialPos, initialSize);
+  const [pos, setPos] = useState(initialClamped.pos);
+  const [size, setSize] = useState(initialClamped.size);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
-  const preMaximizeState = useRef({ pos, size });
+  const preMaximizeState = useRef({ pos: initialClamped.pos, size: initialClamped.size });
 
   const dragStartPos = useRef({ x: 0, y: 0 });
   const resizeStart = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const windowRef = useRef<HTMLDivElement>(null);
+
+  // Re-clamp window cleanly whenever the viewport resizes or rotates
+  useEffect(() => {
+    const onResize = () => {
+      setPos((prevPos) => clampWindowGeometry(prevPos, size).pos);
+      setSize((prevSize) => clampWindowGeometry(pos, prevSize).size);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [pos, size]);
 
   const handleHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.target instanceof Element && e.target.closest('button')) return;
@@ -74,8 +115,12 @@ export const DraggableWindow: React.FC<DraggableWindowProps> = ({
 
   const toggleMaximize = () => {
     if (isMaximized) {
-      setPos(preMaximizeState.current.pos);
-      setSize(preMaximizeState.current.size);
+      const restored = clampWindowGeometry(
+        preMaximizeState.current.pos,
+        preMaximizeState.current.size
+      );
+      setPos(restored.pos);
+      setSize(restored.size);
     } else {
       preMaximizeState.current = { pos, size };
       setPos({ x: 0, y: 0 });
@@ -89,16 +134,25 @@ export const DraggableWindow: React.FC<DraggableWindowProps> = ({
       if (!isDragging && !isResizing) return;
       e.preventDefault();
 
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
       if (isDragging) {
+        const nextX = e.clientX - dragStartPos.current.x;
+        const nextY = e.clientY - dragStartPos.current.y;
+        const maxX = Math.max(EDGE_MARGIN_PX, vw - size.width - EDGE_MARGIN_PX);
+        const maxY = Math.max(EDGE_MARGIN_PX, vh - 80);
         setPos({
-          x: e.clientX - dragStartPos.current.x,
-          y: e.clientY - dragStartPos.current.y,
+          x: Math.min(Math.max(EDGE_MARGIN_PX, nextX), maxX),
+          y: Math.min(Math.max(EDGE_MARGIN_PX, nextY), maxY),
         });
       }
       if (isResizing) {
+        const maxW = Math.max(280, vw - pos.x - EDGE_MARGIN_PX);
+        const maxH = Math.max(220, vh - pos.y - EDGE_MARGIN_PX);
         setSize({
-          width: Math.max(320, resizeStart.current.width + (e.clientX - resizeStart.current.x)),
-          height: Math.max(220, resizeStart.current.height + (e.clientY - resizeStart.current.y)),
+          width: Math.min(maxW, Math.max(280, resizeStart.current.width + (e.clientX - resizeStart.current.x))),
+          height: Math.min(maxH, Math.max(220, resizeStart.current.height + (e.clientY - resizeStart.current.y))),
         });
       }
     };
@@ -120,7 +174,7 @@ export const DraggableWindow: React.FC<DraggableWindowProps> = ({
       window.removeEventListener('pointerup', handleGlobalPointerUp);
       window.removeEventListener('pointercancel', handleGlobalPointerUp);
     };
-  }, [isDragging, isResizing]);
+  }, [isDragging, isResizing, pos.x, pos.y, size.width]);
 
   return (
     <div
@@ -132,6 +186,8 @@ export const DraggableWindow: React.FC<DraggableWindowProps> = ({
               top: pos.y,
               width: size.width,
               height: size.height,
+              maxWidth: 'calc(100vw - 16px)',
+              maxHeight: 'calc(100dvh - 88px)',
               zIndex,
             }
           : { zIndex }
@@ -149,25 +205,25 @@ export const DraggableWindow: React.FC<DraggableWindowProps> = ({
       <div
         onDoubleClick={toggleMaximize}
         onPointerDown={handleHeaderPointerDown}
-        className={`px-3 py-1.5 flex items-center justify-between select-none touch-none border-b-2 border-[#162022] ${
+        className={`px-3 py-1.5 flex items-center justify-between gap-2 select-none touch-none border-b-2 border-[#162022] ${
           isActive ? 'bg-[#36494d]' : 'bg-[#28383b]'
         } ${!isMaximized ? 'cursor-grab active:cursor-grabbing' : ''}`}
       >
-        <div className="flex items-center gap-2 text-white pointer-events-none uppercase tracking-wider text-[16px]">
+        <div className="flex items-center gap-2 min-w-0 text-white pointer-events-none uppercase tracking-wider text-[15px] sm:text-[16px]">
           {Icon && (
-            <span className="flex h-5 w-5 items-center justify-center rounded-[4px] bg-[#fe5f55] border-b-2 border-[#b8352e] text-white">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] bg-[#fe5f55] border-b-2 border-[#b8352e] text-white">
               <Icon size={12} />
             </span>
           )}
-          <span className="[text-shadow:1px_1px_0_rgba(0,0,0,0.9)]">{title}</span>
+          <span className="truncate [text-shadow:1px_1px_0_rgba(0,0,0,0.9)]">{title}</span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={toggleMaximize}
             aria-label="Toggle maximize window"
-            className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[#009dff] border-b-2 border-[#0068b8] text-white hover:brightness-90 active:translate-y-[1px] cursor-pointer"
+            className="flex h-7 w-7 sm:h-6 sm:w-6 items-center justify-center rounded-[5px] bg-[#009dff] border-b-2 border-[#0068b8] text-white hover:brightness-90 active:translate-y-[1px] cursor-pointer"
           >
             {isMaximized ? <Minus size={12} /> : <Square size={10} />}
           </button>
@@ -179,7 +235,7 @@ export const DraggableWindow: React.FC<DraggableWindowProps> = ({
             }}
             onPointerDown={(e) => e.stopPropagation()}
             aria-label="Close window"
-            className="flex h-6 w-6 items-center justify-center rounded-[5px] bg-[#fe5f55] border-b-2 border-[#b8352e] text-white hover:brightness-90 active:translate-y-[1px] cursor-pointer"
+            className="flex h-7 w-7 sm:h-6 sm:w-6 items-center justify-center rounded-[5px] bg-[#fe5f55] border-b-2 border-[#b8352e] text-white hover:brightness-90 active:translate-y-[1px] cursor-pointer"
           >
             <X size={13} strokeWidth={2.8} />
           </button>
@@ -187,7 +243,7 @@ export const DraggableWindow: React.FC<DraggableWindowProps> = ({
       </div>
 
       {/* Window Content */}
-      <div className="flex-1 overflow-hidden relative bg-[#182426]">
+      <div className="flex-1 min-h-0 overflow-hidden relative bg-[#182426]">
         {children}
         {!isActive && <div className="absolute inset-0 bg-transparent" />}
       </div>
@@ -195,7 +251,7 @@ export const DraggableWindow: React.FC<DraggableWindowProps> = ({
       {/* Resize Handle */}
       {!isMaximized && (
         <div
-          className="absolute bottom-0 right-0 w-7 h-7 cursor-nwse-resize flex items-center justify-center z-20 text-[#b9c2d2]/70 hover:text-[#f5b841] touch-none"
+          className="hidden sm:flex absolute bottom-0 right-0 w-7 h-7 cursor-nwse-resize items-center justify-center z-20 text-[#b9c2d2]/70 hover:text-[#f5b841] touch-none"
           onPointerDown={handleResizePointerDown}
         >
           <Grip size={14} className="-rotate-45 translate-x-1 translate-y-1" />

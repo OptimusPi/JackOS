@@ -15,10 +15,10 @@ export interface BalButtonProps extends React.ButtonHTMLAttributes<HTMLButtonEle
 }
 
 const BUTTON_SIZE_CLASSES: Record<BalSize, string> = {
-  xs: 'px-2.5 py-1 text-[13px] min-h-[28px]',
-  sm: 'px-3 py-1.5 text-[15px] min-h-[34px]',
-  md: 'px-4 py-2 text-[18px] min-h-[42px]',
-  lg: 'px-5 py-2.5 text-[22px] min-h-[48px]',
+  xs: 'px-2 sm:px-2.5 py-1 text-[12px] sm:text-[13px] min-h-[28px]',
+  sm: 'px-2.5 sm:px-3 py-1.5 text-[14px] sm:text-[15px] min-h-[34px]',
+  md: 'px-3 sm:px-4 py-1.5 sm:py-2 text-[16px] sm:text-[18px] min-h-[40px]',
+  lg: 'px-4 sm:px-5 py-2.5 text-[20px] sm:text-[22px] min-h-[48px]',
 };
 
 export const BalButton: React.FC<BalButtonProps> = ({
@@ -47,11 +47,11 @@ export const BalButton: React.FC<BalButtonProps> = ({
           '--bal-text': palette.text,
         } as React.CSSProperties
       }
-      className={`bal-btn ${block ? 'w-full' : 'inline-flex'} ${className}`}
+      className={`bal-btn max-w-full min-w-0 ${block ? 'w-full' : 'inline-flex'} ${className}`}
       {...rest}
     >
       <span
-        className={`bal-btn__face inline-flex w-full items-center justify-center gap-1.5 whitespace-nowrap ${BUTTON_SIZE_CLASSES[size]}`}
+        className={`bal-btn__face inline-flex w-full min-w-0 items-center justify-center gap-1.5 whitespace-nowrap overflow-hidden text-ellipsis ${BUTTON_SIZE_CLASSES[size]}`}
       >
         {children}
       </span>
@@ -84,15 +84,18 @@ export const BalPanel: React.FC<BalPanelProps> = ({
       : 'bg-[#36494d] border-[3px] border-[#b9c2d2] border-b-[#6f7987] shadow-[0_4px_0_rgba(0,0,0,0.55)]';
 
   return (
-    <div className={`rounded-[8px] p-3 text-white ${surfaceClass} ${className}`} {...rest}>
+    <div
+      className={`w-full min-w-0 max-w-full rounded-[8px] p-2.5 sm:p-3 text-white ${surfaceClass} ${className}`}
+      {...rest}
+    >
       {(title != null || rightSlot != null) && (
-        <div className="mb-2 flex items-center justify-between gap-2 border-b border-white/10 pb-1.5">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5 border-b border-white/10 pb-1.5">
           {title != null && (
-            <h3 className="m-0 text-[18px] leading-none tracking-wide text-white [text-shadow:1px_1px_0_rgba(0,0,0,0.85)]">
+            <h3 className="m-0 min-w-0 text-[16px] sm:text-[18px] leading-tight tracking-wide text-white [text-shadow:1px_1px_0_rgba(0,0,0,0.85)]">
               {title}
             </h3>
           )}
-          {rightSlot && <div className="flex items-center gap-1.5 shrink-0">{rightSlot}</div>}
+          {rightSlot && <div className="flex flex-wrap items-center gap-1.5 max-w-full">{rightSlot}</div>}
         </div>
       )}
       {children}
@@ -285,11 +288,30 @@ export function BalSelect<T extends string>({
   disabled = false,
 }: BalSelectProps<T>) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const current = items.find((i) => i.value === value);
+  const searchable = items.length > 10;
+
+  const filteredItems =
+    searchable && query.trim()
+      ? items.filter((item) => {
+          const q = query.trim().toLowerCase();
+          return (
+            item.label.toLowerCase().includes(q) || item.value.toLowerCase().includes(q)
+          );
+        })
+      : items;
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setQuery('');
+      return;
+    }
+    if (searchable) {
+      window.setTimeout(() => searchInputRef.current?.focus(), 0);
+    }
     const onOutside = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
         setOpen(false);
@@ -304,7 +326,7 @@ export function BalSelect<T extends string>({
       document.removeEventListener('mousedown', onOutside);
       document.removeEventListener('keydown', onEsc);
     };
-  }, [open]);
+  }, [open, searchable]);
 
   return (
     <div ref={rootRef} className="relative flex flex-col gap-1">
@@ -325,33 +347,50 @@ export function BalSelect<T extends string>({
       </button>
 
       {open && (
-        <ul
-          role="listbox"
-          className="absolute left-0 right-0 top-full mt-1.5 z-[5000] max-h-[240px] overflow-y-auto rounded-[6px] border-2 border-[#b9c2d2] bg-[#2a3b3e] p-1 shadow-[0_6px_0_rgba(0,0,0,0.6)]"
-        >
-          {items.map((item) => {
-            const selected = item.value === value;
-            return (
-              <li key={item.value} role="option" aria-selected={selected}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onChange(item.value);
-                    setOpen(false);
-                  }}
-                  className={`flex w-full items-center justify-between rounded-[4px] px-2.5 py-1.5 text-left text-[15px] transition-colors ${
-                    selected
-                      ? 'bg-[#fe5f55] text-white'
-                      : 'text-white/90 hover:bg-[#3e5459]'
-                  }`}
-                >
-                  <span className="truncate">{item.label}</span>
-                  {selected && <Check size={14} className="shrink-0 text-[#f5b841]" />}
-                </button>
+        <div className="absolute left-0 right-0 top-full mt-1.5 z-[5000] rounded-[6px] border-2 border-[#b9c2d2] bg-[#2a3b3e] p-1 shadow-[0_6px_0_rgba(0,0,0,0.6)]">
+          {searchable && (
+            <div className="p-1 pb-1.5 border-b border-white/10">
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={`Filter ${items.length} options…`}
+                className="w-full rounded-[4px] border border-[#4f6367] bg-[#182426] px-2 py-1 text-[13px] text-white placeholder:text-[#7c9499] focus:outline-none focus:border-[#f5b841]"
+              />
+            </div>
+          )}
+          <ul role="listbox" className="max-h-[240px] overflow-y-auto pt-0.5">
+            {filteredItems.length === 0 ? (
+              <li className="px-2.5 py-2 text-[13px] text-[#b7c7ca] text-center">
+                No match for “{query}”
               </li>
-            );
-          })}
-        </ul>
+            ) : (
+              filteredItems.map((item) => {
+                const selected = item.value === value;
+                return (
+                  <li key={item.value} role="option" aria-selected={selected}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onChange(item.value);
+                        setOpen(false);
+                      }}
+                      className={`flex w-full items-center justify-between rounded-[4px] px-2.5 py-1.5 text-left text-[15px] transition-colors ${
+                        selected
+                          ? 'bg-[#fe5f55] text-white'
+                          : 'text-white/90 hover:bg-[#3e5459]'
+                      }`}
+                    >
+                      <span className="truncate">{item.label}</span>
+                      {selected && <Check size={14} className="shrink-0 text-[#f5b841]" />}
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
       )}
     </div>
   );
@@ -464,15 +503,20 @@ export function BalTabs<T extends string>({
   onChange,
   tone = 'red',
   size = 'sm',
+  className = '',
 }: {
   tabs: readonly BalTabOption<T>[];
   value: T;
   onChange: (value: T) => void;
   tone?: BalTone;
   size?: BalSize;
+  className?: string;
 }) {
   return (
-    <div role="tablist" className="flex flex-wrap items-center gap-1.5">
+    <div
+      role="tablist"
+      className={className || 'grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-1.5 w-full sm:w-auto'}
+    >
       {tabs.map((tab) => {
         const isActive = tab.value === value;
         return (
@@ -482,7 +526,9 @@ export function BalTabs<T extends string>({
             aria-selected={isActive}
             tone={isActive ? tone : 'slate'}
             size={size}
+            block={false}
             active={isActive}
+            className="w-full sm:w-auto"
             onClick={() => onChange(tab.value)}
           >
             {tab.label}

@@ -17,8 +17,8 @@ export function parseSeedOgParams(query: Record<string, unknown>): SeedOgParams 
   const deck = String(query.deck ?? 'Ghost').trim().slice(0, 20) || 'Ghost';
   const stake = String(query.stake ?? 'White').trim().slice(0, 20) || 'White';
   const ante = String(query.ante ?? '1').trim().slice(0, 4) || '1';
-  const boss = String(query.boss ?? 'The Hook').trim().slice(0, 28) || 'The Hook';
-  const voucher = String(query.voucher ?? 'Crystal Ball').trim().slice(0, 28) || 'Crystal Ball';
+  const boss = String(query.boss ?? '').trim().slice(0, 28) || 'Live Ante 1–8 Map';
+  const voucher = String(query.voucher ?? '').trim().slice(0, 28) || 'Full Shop & Packs';
   const soulsRaw = String(query.souls ?? '').trim();
   const shopRaw = String(query.shop ?? '').trim();
 

@@ -346,6 +346,54 @@ export const LEGENDARY_JOKERS = [
   { key: 'Perkeo', label: 'Perkeo' },
 ] as const;
 
+const POPULAR_JOKERS = [
+  'Blueprint',
+  'Brainstorm',
+  'WeeJoker',
+  'Baron',
+  'Mime',
+  'DNA',
+  'InvisibleJoker',
+  'SockAndBuskin',
+  'HangingChad',
+  'Photograph',
+  'Hack',
+  'Bloodstone',
+  'OopsAll6s',
+  'Showman',
+  'TradingCard',
+  'Vampire',
+  'MidasMask',
+  'Hologram',
+  'Constellation',
+  'Stuntman',
+  'BurntJoker',
+  'TheIdol',
+  'AncientJoker',
+  'GrosMichel',
+  'Cavendish',
+];
+
+const ALL_JOKER_CLAUSE_ITEMS: { value: string; label: string }[] = (() => {
+  const seen = new Set<string>();
+  const out: { value: string; label: string }[] = [{ value: 'Any', label: 'Any Joker' }];
+  const allKeys = Object.keys(MotelyJoker).filter(
+    (k) => Number.isNaN(Number(k)) && k !== 'None' && k !== 'Invalid'
+  );
+  const keySet = new Set(allKeys);
+  for (const pop of POPULAR_JOKERS) {
+    if (keySet.has(pop) && !seen.has(pop)) {
+      seen.add(pop);
+      out.push({ value: pop, label: formatDisplayName(pop) });
+    }
+  }
+  const rest = allKeys
+    .filter((k) => !seen.has(k))
+    .map((k) => ({ value: k, label: formatDisplayName(k) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  return [...out, ...rest];
+})();
+
 export const JAML_CLAUSE_ITEMS: Record<
   | 'joker'
   | 'legendaryJoker'
@@ -359,33 +407,7 @@ export const JAML_CLAUSE_ITEMS: Record<
   | 'erraticRank',
   readonly { value: string; label: string }[]
 > = {
-  joker: [
-    { value: 'Blueprint', label: 'Blueprint' },
-    { value: 'Brainstorm', label: 'Brainstorm' },
-    { value: 'WeeJoker', label: 'Wee Joker' },
-    { value: 'Baron', label: 'Baron' },
-    { value: 'Mime', label: 'Mime' },
-    { value: 'DNA', label: 'DNA' },
-    { value: 'InvisibleJoker', label: 'Invisible Joker' },
-    { value: 'SockAndBuskin', label: 'Sock and Buskin' },
-    { value: 'HangingChad', label: 'Hanging Chad' },
-    { value: 'Photograph', label: 'Photograph' },
-    { value: 'Hack', label: 'Hack' },
-    { value: 'Bloodstone', label: 'Bloodstone' },
-    { value: 'OopsAll6s', label: 'Oops! All 6s' },
-    { value: 'Showman', label: 'Showman' },
-    { value: 'TradingCard', label: 'Trading Card' },
-    { value: 'Vampire', label: 'Vampire' },
-    { value: 'MidasMask', label: 'Midas Mask' },
-    { value: 'Hologram', label: 'Hologram' },
-    { value: 'Constellation', label: 'Constellation' },
-    { value: 'Stuntman', label: 'Stuntman' },
-    { value: 'BurntJoker', label: 'Burnt Joker' },
-    { value: 'TheIdol', label: 'The Idol' },
-    { value: 'AncientJoker', label: 'Ancient Joker' },
-    { value: 'GrosMichel', label: 'Gros Michel' },
-    { value: 'Any', label: 'Any Joker' },
-  ],
+  joker: ALL_JOKER_CLAUSE_ITEMS,
   legendaryJoker: [
     { value: 'Perkeo', label: 'Perkeo' },
     { value: 'Triboulet', label: 'Triboulet' },

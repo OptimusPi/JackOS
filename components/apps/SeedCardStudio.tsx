@@ -687,7 +687,7 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
           </div>
 
           {/* AUTHENTIC BALATRO HOVER INSPECTION TOOLTIP PLAQUE */}
-          <div className="flex-1 min-w-[260px] max-w-[440px] w-full rounded-[12px] border-[3px] border-[#b9c2d2] bg-[#36494d] p-3.5 shadow-[0_8px_0_rgba(0,0,0,0.45)] flex flex-col gap-2.5">
+          <div className="flex-1 min-w-0 max-w-[440px] w-full rounded-[12px] border-[3px] border-[#b9c2d2] bg-[#36494d] p-3 sm:p-3.5 shadow-[0_8px_0_rgba(0,0,0,0.45)] flex flex-col gap-2.5">
             <div className="text-center">
               <div className="text-[24px] leading-tight text-white [text-shadow:2px_2px_0_rgba(0,0,0,0.8)] truncate">
                 {cardName || seed}
@@ -755,45 +755,55 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
         </div>
 
         {/* EXPORT BAR */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          <div className="flex items-center gap-1.5">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-2 pt-1">
+          <div className="grid grid-cols-2 sm:flex items-center gap-1.5">
             <BalButton
               tone={exportLayout === 'showcase' ? 'blue' : 'slate'}
               size="xs"
+              block={false}
+              className="w-full sm:w-auto"
               active={exportLayout === 'showcase'}
               onClick={() => {
                 playCardClick(1.05);
                 setExportLayout('showcase');
               }}
             >
-              Card + Plaque (1280×760)
+              Card + Plaque
             </BalButton>
             <BalButton
               tone={exportLayout === 'card' ? 'blue' : 'slate'}
               size="xs"
+              block={false}
+              className="w-full sm:w-auto"
               active={exportLayout === 'card'}
               onClick={() => {
                 playCardClick(1.05);
                 setExportLayout('card');
               }}
             >
-              Card Only (710×950)
+              Card Only
             </BalButton>
           </div>
 
-          <div className="flex items-center gap-2">
-            <BalButton tone={copiedPng ? 'green' : 'slate'} size="sm" onClick={handleCopyPng}>
+          <div className="grid grid-cols-2 sm:flex items-center gap-1.5 sm:gap-2">
+            <BalButton
+              tone={copiedPng ? 'green' : 'slate'}
+              size="sm"
+              className="w-full sm:w-auto"
+              onClick={handleCopyPng}
+            >
               {copiedPng ? <Check size={14} /> : <Copy size={14} />}
               <span>{copiedPng ? 'Copied PNG' : 'Copy PNG'}</span>
             </BalButton>
             <BalButton
               tone="orange"
               size="sm"
+              className="w-full sm:w-auto"
               disabled={isSavingPng}
               onClick={handleDownloadPng}
             >
               {isSavingPng ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-              <span>{isSavingPng ? 'Rendering…' : 'Save Seed Card PNG'}</span>
+              <span>{isSavingPng ? 'Rendering…' : 'Save PNG'}</span>
             </BalButton>
           </div>
         </div>

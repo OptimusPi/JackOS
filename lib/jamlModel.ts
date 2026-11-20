@@ -314,19 +314,237 @@ export type SourcePresetKey =
   | 'boosterPacks'
   | 'judgementWraith';
 
+export type EditableClauseKind =
+  | 'joker'
+  | 'legendaryJoker'
+  | 'rareJoker'
+  | 'voucher'
+  | 'tag'
+  | 'boss'
+  | 'tarotCard'
+  | 'spectralCard'
+  | 'boosterPack'
+  | 'erraticRank';
+
+export interface EditableClauseDraft {
+  section: ClauseSection;
+  kind: EditableClauseKind;
+  item: string;
+  edition: MotelyItemEditionName | '';
+  antes: number[];
+  score: number;
+  min: number;
+  sourcePreset: SourcePresetKey;
+}
+
+const EDITABLE_KINDS: readonly EditableClauseKind[] = [
+  'joker',
+  'legendaryJoker',
+  'rareJoker',
+  'voucher',
+  'tag',
+  'boss',
+  'tarotCard',
+  'spectralCard',
+  'boosterPack',
+  'erraticRank',
+];
+
+function detectSourcePreset(srcObj: Record<string, unknown> | undefined): SourcePresetKey {
+  if (!srcObj || typeof srcObj !== 'object') return 'any';
+  if (srcObj.arcanaPacks || srcObj.spectralPacks) return 'soulPacks';
+  if (srcObj.judgement || srcObj.wraith) return 'judgementWraith';
+  if (srcObj.boosterPacks) return 'boosterPacks';
+  if (Array.isArray(srcObj.shopItems)) {
+    return srcObj.shopItems.length <= 4 ? 'shop4' : 'shop10';
+  }
+  return 'any';
+}
+
+export function extractEditableClauseFields(
+  clause: JamlClause,
+  section: ClauseSection
+): EditableClauseDraft | null {
+  const rec = clause as unknown as Record<string, unknown>;
+  let matchedKind: EditableClauseKind | null = null;
+  let itemVal = '';
+
+  for (const k of EDITABLE_KINDS) {
+    const v = rec[k];
+    if (typeof v === 'string') {
+      matchedKind = k;
+      itemVal = v;
+      break;
+    }
+  }
+  if (!matchedKind) return null;
+
+  const rawAntes = rec.antes ?? rec.ante;
+  let antes: number[] = [];
+  if (typeof rawAntes === 'number') {
+    antes = [rawAntes];
+  } else if (Array.isArray(rawAntes)) {
+    antes = Array.from(
+      new Set(rawAntes.filter((n): n is number => typeof n === 'number' && n >= 0 && n <= 8))
+    ).sort((a, b) => a - b);
+  }
+
+  const edition =
+    typeof rec.edition === 'string' && rec.edition !== 'None'
+      ? (rec.edition as MotelyItemEditionName)
+      : '';
+
+  const score = typeof rec.score === 'number' ? rec.score : 10;
+  const min = typeof rec.min === 'number' ? rec.min : 10;
+  const sourcePreset = detectSourcePreset(
+    (rec.sources ?? rec.legendarySources) as Record<string, unknown> | undefined
+  );
+
+  return {
+    section,
+    kind: matchedKind,
+    item: itemVal,
+    edition,
+    antes,
+    score,
+    min,
+    sourcePreset,
+  };
+}
+
+export function updateClauseInFilter(
+  filter: JamlFilter,
+  fromSection: ClauseSection,
+  index: number,
+  nextSection: ClauseSection,
+  nextClause: JamlClause
+): JamlFilter {
+  if (fromSection === nextSection) {
+    const list = Array.isArray(filter[fromSection]) ? [...filter[fromSection]!] : [];
+    if (index < 0 || index >= list.length) return filter;
+    list[index] = nextClause;
+    return { ...filter, [fromSection]: list };
+  }
+
+  const fromList = Array.isArray(filter[fromSection]) ? [...filter[fromSection]!] : [];
+  if (index >= 0 && index < fromList.length) {
+    fromList.splice(index, 1);
+  }
+  const toList = Array.isArray(filter[nextSection]) ? [...filter[nextSection]!] : [];
+  toList.push(nextClause);
+
+  return {
+    ...filter,
+    [fromSection]: fromList,
+    [nextSection]: toList,
+  };
+}
+
+export interface FilterCleanupStats {
+  removedDuplicates: number;
+  normalizedAntes: number;
+  strippedEmpty: number;
+}
+
+/**
+ * Cleans up a JAML filter: deduplicates identical clauses per section,
+ * sorts & deduplicates ante arrays, strips redundant `edition: "None"` or
+ * empty `sources: {}` blocks, and drops empty sections.
+ */
+export function cleanupFilter(filter: JamlFilter): {
+  filter: JamlFilter;
+  stats: FilterCleanupStats;
+} {
+  const stats: FilterCleanupStats = {
+    removedDuplicates: 0,
+    normalizedAntes: 0,
+    strippedEmpty: 0,
+  };
+
+  const next: JamlFilter = { ...filter };
+  const sections: ClauseSection[] = ['must', 'should', 'mustNot'];
+
+  for (const sec of sections) {
+    const rawList = next[sec];
+    if (!Array.isArray(rawList)) continue;
+    if (rawList.length === 0) {
+      delete next[sec];
+      stats.strippedEmpty += 1;
+      continue;
+    }
+
+    const seen = new Set<string>();
+    const cleanedList: JamlClause[] = [];
+
+    for (const rawClause of rawList) {
+      if (!rawClause || typeof rawClause !== 'object' || Object.keys(rawClause).length === 0) {
+        stats.strippedEmpty += 1;
+        continue;
+      }
+      const copy = JSON.parse(JSON.stringify(rawClause)) as Record<string, unknown>;
+
+      // Normalize `antes` array (unique + ascending)
+      if (Array.isArray(copy.antes)) {
+        const before = JSON.stringify(copy.antes);
+        const sorted = Array.from(
+          new Set(copy.antes.filter((n): n is number => typeof n === 'number'))
+        ).sort((a, b) => a - b);
+        if (sorted.length === 0) {
+          delete copy.antes;
+          stats.strippedEmpty += 1;
+        } else {
+          copy.antes = sorted;
+          if (JSON.stringify(sorted) !== before) {
+            stats.normalizedAntes += 1;
+          }
+        }
+      }
+
+      // Strip redundant edition / empty sources / stray score on non-should
+      if (copy.edition === '' || copy.edition === 'None') {
+        delete copy.edition;
+        stats.strippedEmpty += 1;
+      }
+      if (copy.sources && typeof copy.sources === 'object' && Object.keys(copy.sources as object).length === 0) {
+        delete copy.sources;
+        stats.strippedEmpty += 1;
+      }
+      if (sec !== 'should' && 'score' in copy) {
+        delete copy.score;
+        stats.strippedEmpty += 1;
+      }
+
+      const sig = JSON.stringify(copy);
+      if (seen.has(sig)) {
+        stats.removedDuplicates += 1;
+        continue;
+      }
+      seen.add(sig);
+      cleanedList.push(copy as unknown as JamlClause);
+    }
+
+    if (cleanedList.length === 0) {
+      delete next[sec];
+      stats.strippedEmpty += 1;
+    } else {
+      next[sec] = cleanedList;
+    }
+  }
+
+  return { filter: next, stats };
+}
+
+export function clearFilterClauses(filter: JamlFilter): JamlFilter {
+  const next: JamlFilter = { ...filter };
+  delete next.must;
+  delete next.should;
+  delete next.mustNot;
+  return next;
+}
+
 export function buildTypedClause(params: {
   section: ClauseSection;
-  kind:
-    | 'joker'
-    | 'legendaryJoker'
-    | 'rareJoker'
-    | 'voucher'
-    | 'tag'
-    | 'boss'
-    | 'tarotCard'
-    | 'spectralCard'
-    | 'boosterPack'
-    | 'erraticRank';
+  kind: EditableClauseKind;
   item: string;
   edition?: MotelyItemEditionName | '';
   antes: number[];
@@ -349,7 +567,7 @@ export function buildTypedClause(params: {
   if (kind === 'erraticRank') {
     raw.min = Math.max(4, min ?? 10);
   } else if (antes.length > 0) {
-    raw.antes = antes;
+    raw.antes = Array.from(new Set(antes)).sort((a, b) => a - b);
   }
 
   // Real typed source blocks from motely-wasm/jaml
@@ -381,3 +599,233 @@ export function buildTypedClause(params: {
 
   return raw as unknown as JamlClause;
 }
+
+/**
+ * Extracts all Balatro seed strings from a parsed `JamlFilter` or raw `.jaml` / `.yaml` / `.json` text.
+ * Supports `seeds: [ALEEB, 2K9H9HN]`, YAML block lists, and single `seed: ALEEB`.
+ */
+export function extractSeedsFromJaml(rawText: string, filter?: JamlFilter | null): string[] {
+  const collected: string[] = [];
+  const pushClean = (val: unknown) => {
+    if (typeof val !== 'string') return;
+    const cleaned = val
+      .replace(/^['"]|['"]$/g, '')
+      .trim()
+      .toUpperCase();
+    if (cleaned && /^[A-Z0-9_-]{2,24}$/.test(cleaned)) {
+      collected.push(cleaned);
+    }
+  };
+
+  if (filter) {
+    const rec = filter as unknown as Record<string, unknown>;
+    if (Array.isArray(rec.seeds)) {
+      rec.seeds.forEach(pushClean);
+    } else if (typeof rec.seeds === 'string') {
+      rec.seeds.split(/[,\s]+/).forEach(pushClean);
+    }
+    if (typeof rec.seed === 'string') {
+      pushClean(rec.seed);
+    }
+  }
+
+  // Fallback parse directly from raw text (handles JSON or YAML before/after JamlConfigLoader)
+  if (collected.length === 0 && rawText.trim()) {
+    const trimmed = rawText.trim();
+    if (trimmed.startsWith('{')) {
+      try {
+        const obj = JSON.parse(trimmed) as Record<string, unknown>;
+        if (Array.isArray(obj.seeds)) obj.seeds.forEach(pushClean);
+        if (typeof obj.seed === 'string') pushClean(obj.seed);
+      } catch {
+        // ignore JSON parse error
+      }
+    } else {
+      // Inline YAML: seeds: [ALEEB, 2K9H9HN]
+      const inlineMatch = trimmed.match(/^\s*seeds\s*:\s*\[([^\]]+)\]/m);
+      if (inlineMatch) {
+        inlineMatch[1].split(',').forEach(pushClean);
+      }
+      // Single YAML: seed: ALEEB
+      const singleMatch = trimmed.match(/^\s*seed\s*:\s*['"]?([A-Za-z0-9_-]+)['"]?/m);
+      if (singleMatch) {
+        pushClean(singleMatch[1]);
+      }
+      // Block YAML list:
+      // seeds:
+      //   - ALEEB
+      //   - 2K9H9HN
+      const lines = trimmed.split(/\r?\n/);
+      let inSeedsBlock = false;
+      for (const line of lines) {
+        if (/^\s*seeds\s*:\s*(#.*)?$/.test(line)) {
+          inSeedsBlock = true;
+          continue;
+        }
+        if (inSeedsBlock) {
+          const itemMatch = line.match(/^\s*-\s*['"]?([A-Za-z0-9_-]+)['"]?\s*(#.*)?$/);
+          if (itemMatch) {
+            pushClean(itemMatch[1]);
+          } else if (line.trim() !== '' && !line.trim().startsWith('#')) {
+            inSeedsBlock = false;
+          }
+        }
+      }
+    }
+  }
+
+  return Array.from(new Set(collected));
+}
+
+export interface AnteClauseHit {
+  section: ClauseSection;
+  clauseKey: string;
+  targetText: string;
+  location: string;
+  edition: string | null;
+  score: number | null;
+}
+
+export interface SeedMapEvaluation {
+  hitsByAnte: Record<number, AnteClauseHit[]>;
+  totalMust: number;
+  matchedMust: number;
+  shouldPoints: number;
+  mustNotHits: number;
+}
+
+function normalizeToken(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Evaluates all clauses of a `JamlFilter` against a real `MotelyJamlyzer` seed analysis
+ * so the JAML Map can highlight exact Ante-by-Ante rule matches.
+ */
+export function evaluateFilterOnSeed(
+  filter: JamlFilter | null,
+  antes: readonly {
+    ante: number;
+    bossLabel: string;
+    voucherLabel: string;
+    smallTagLabel: string;
+    bigTagLabel: string;
+    shopEntries: readonly { name: string; edition: string | null; location: string }[];
+    packEntries: readonly { name: string; edition: string | null; location: string }[];
+    soulEntries: readonly { name: string; edition: string | null; location: string }[];
+  }[]
+): SeedMapEvaluation {
+  const hitsByAnte: Record<number, AnteClauseHit[]> = {};
+  for (const a of antes) {
+    hitsByAnte[a.ante] = [];
+  }
+
+  if (!filter) {
+    return { hitsByAnte, totalMust: 0, matchedMust: 0, shouldPoints: 0, mustNotHits: 0 };
+  }
+
+  const summaries = extractAllClauses(filter);
+  let totalMust = 0;
+  let matchedMust = 0;
+  let shouldPoints = 0;
+  let mustNotHits = 0;
+
+  for (const summary of summaries) {
+    if (summary.section === 'must') totalMust += 1;
+
+    const rec = summary.clause as unknown as Record<string, unknown>;
+    const rawTarget = rec[summary.primaryKey];
+    const targetStrings: string[] =
+      typeof rawTarget === 'string'
+        ? [rawTarget]
+        : Array.isArray(rawTarget)
+        ? rawTarget.filter((x): x is string => typeof x === 'string')
+        : [];
+    if (targetStrings.length === 0) continue;
+
+    const isAny = targetStrings.some((t) => t === 'Any');
+    const targetNorms = targetStrings.map(normalizeToken);
+    const reqEdition = summary.edition ? normalizeToken(summary.edition) : null;
+
+    const rawAntes = rec.antes ?? rec.ante;
+    const allowedAntes: Set<number> | null =
+      typeof rawAntes === 'number'
+        ? new Set([rawAntes])
+        : Array.isArray(rawAntes)
+        ? new Set(rawAntes.filter((n): n is number => typeof n === 'number'))
+        : null;
+
+    let clauseMatchedAnyAnte = false;
+    const pk = summary.primaryKey;
+
+    for (const a of antes) {
+      if (allowedAntes && !allowedAntes.has(a.ante)) continue;
+
+      let matchedLoc: string | null = null;
+      let matchedEd: string | null = null;
+
+      if (pk === 'boss' || pk === 'bosses') {
+        const bNorm = normalizeToken(a.bossLabel);
+        if (isAny || targetNorms.some((t) => bNorm === t || bNorm.includes(t))) {
+          matchedLoc = 'Boss Blind';
+        }
+      } else if (pk === 'voucher' || pk === 'vouchers') {
+        const vNorm = normalizeToken(a.voucherLabel);
+        if (isAny || targetNorms.some((t) => vNorm === t || vNorm.includes(t))) {
+          matchedLoc = 'Voucher';
+        }
+      } else if (pk === 'tag' || pk === 'tags' || pk === 'smallBlindTag' || pk === 'bigBlindTag') {
+        const sNorm = normalizeToken(a.smallTagLabel);
+        const bNorm = normalizeToken(a.bigTagLabel);
+        if (pk !== 'bigBlindTag' && (isAny || targetNorms.some((t) => sNorm === t || sNorm.includes(t)))) {
+          matchedLoc = 'Small Blind Tag';
+        } else if (pk !== 'smallBlindTag' && (isAny || targetNorms.some((t) => bNorm === t || bNorm.includes(t)))) {
+          matchedLoc = 'Big Blind Tag';
+        }
+      } else if (pk === 'legendaryJoker' || pk === 'legendaryJokers' || pk === 'soulJoker') {
+        for (const s of a.soulEntries) {
+          const nNorm = normalizeToken(s.name);
+          const edOk = !reqEdition || (s.edition ? normalizeToken(s.edition) === reqEdition : false);
+          if (edOk && (isAny || targetNorms.some((t) => nNorm === t || nNorm.includes(t)))) {
+            matchedLoc = s.location;
+            matchedEd = s.edition;
+            break;
+          }
+        }
+      } else {
+        // Jokers, Tarots, Spectrals, Planets, Booster Packs: check shop + packs + souls
+        const pool = [...a.shopEntries, ...a.packEntries, ...a.soulEntries];
+        for (const entry of pool) {
+          const nNorm = normalizeToken(entry.name);
+          const edOk = !reqEdition || (entry.edition ? normalizeToken(entry.edition) === reqEdition : false);
+          if (edOk && (isAny || targetNorms.some((t) => nNorm === t || nNorm.includes(t)))) {
+            matchedLoc = entry.location;
+            matchedEd = entry.edition;
+            break;
+          }
+        }
+      }
+
+      if (matchedLoc) {
+        clauseMatchedAnyAnte = true;
+        hitsByAnte[a.ante].push({
+          section: summary.section,
+          clauseKey: `${summary.section}-${summary.index}-${summary.primaryKey}`,
+          targetText: summary.targetText,
+          location: matchedLoc,
+          edition: matchedEd ?? summary.edition,
+          score: summary.score,
+        });
+      }
+    }
+
+    if (clauseMatchedAnyAnte) {
+      if (summary.section === 'must') matchedMust += 1;
+      if (summary.section === 'should') shouldPoints += summary.score ?? 10;
+      if (summary.section === 'mustNot') mustNotHits += 1;
+    }
+  }
+
+  return { hitsByAnte, totalMust, matchedMust, shouldPoints, mustNotHits };
+}
+

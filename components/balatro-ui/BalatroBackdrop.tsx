@@ -175,7 +175,8 @@ export const BalatroBackdrop: React.FC<BalatroBackdropProps> = ({
 
     // ResizeObserver prevents 60fps synchronous clientWidth/clientHeight reflow
     const syncSize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const isCompact = window.innerWidth < 640;
+      const dpr = isCompact ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
       const w = Math.max(1, Math.floor(canvas.clientWidth * dpr));
       const h = Math.max(1, Math.floor(canvas.clientHeight * dpr));
       if (canvas.width !== w || canvas.height !== h) {

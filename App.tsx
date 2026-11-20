@@ -150,18 +150,50 @@ interface OpenWindow {
     size?: { width: number, height: number };
 }
 
+function getResponsiveWindowBounds(
+    appId: AppId | undefined,
+    stackIndex: number
+): { pos: { x: number; y: number }; size: { width: number; height: number } } {
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+    const isMobile = vw < 768;
+
+    // Comfortable default caps (never overly wide on desktop or overflowing on mobile)
+    let targetW = 540;
+    let targetH = 460;
+    if (appId === 'mail') { targetW = 680; targetH = 540; }
+    else if (appId === 'slides') { targetW = 680; targetH = 500; }
+    else if (appId === 'snake') { targetW = 440; targetH = 500; }
+    else if (appId === 'notepad') { targetW = 420; targetH = 480; }
+    else if (appId === 'jaml-searcher') { targetW = 860; targetH = 620; }
+    else if (appId === 'wee-joker') { targetW = 460; targetH = 680; }
+
+    const maxW = Math.max(280, vw - 16);
+    const maxH = Math.max(260, vh - 104);
+    const width = isMobile ? maxW : Math.min(targetW, maxW);
+    const height = isMobile ? maxH : Math.min(targetH, maxH);
+
+    if (isMobile) {
+        return { pos: { x: 8, y: 8 }, size: { width, height } };
+    }
+
+    const offset = (stackIndex % 5) * 24;
+    const x = Math.min(Math.max(16, Math.round((vw - width) / 2) + offset - 24), Math.max(16, vw - width - 16));
+    const y = Math.min(Math.max(16, 24 + offset), Math.max(16, vh - height - 104));
+    return { pos: { x, y }, size: { width, height } };
+}
+
 export const App: React.FC = () => {
     const [openWindows, setOpenWindows] = useState<OpenWindow[]>(() => {
         const jamlItem = INITIAL_DESKTOP_ITEMS.find(i => i.appId === 'jaml-searcher');
         if (!jamlItem) return [];
-        const width = typeof window !== 'undefined' ? Math.min(1120, Math.max(820, window.innerWidth - 120)) : 1080;
-        const height = typeof window !== 'undefined' ? Math.min(720, Math.max(540, window.innerHeight - 140)) : 700;
+        const bounds = getResponsiveWindowBounds('jaml-searcher', 0);
         return [{
             id: jamlItem.id,
             item: jamlItem,
             zIndex: 100,
-            pos: { x: 64, y: 28 },
-            size: { width, height },
+            pos: bounds.pos,
+            size: bounds.size,
         }];
     });
     const [fullScreenSeedfinder, setFullScreenSeedfinder] = useState<boolean>(true);
@@ -198,19 +230,14 @@ export const App: React.FC = () => {
             return;
         }
 
-        let initialSize = { width: 640, height: 480 };
-        if (item.appId === 'mail') initialSize = { width: 800, height: 600 };
-        if (item.appId === 'snake') initialSize = { width: 500, height: 550 };
-        if (item.appId === 'notepad') initialSize = { width: 400, height: 500 };
-        if (item.appId === 'jaml-searcher') initialSize = { width: 1080, height: 700 };
-        if (item.appId === 'wee-joker') initialSize = { width: 500, height: 800 };
+        const bounds = getResponsiveWindowBounds(item.appId, openWindows.length);
 
         setOpenWindows(prev => [...prev, {
             id: item.id,
             item: item,
             zIndex: nextZIndex,
-            pos: { x: 100 + (prev.length * 30), y: 80 + (prev.length * 30) },
-            size: initialSize
+            pos: bounds.pos,
+            size: bounds.size
         }]);
         setNextZIndex(prev => prev + 1);
         setFocusedId(item.id);
@@ -329,6 +356,15 @@ export const App: React.FC = () => {
 
         setIsProcessing(true);
         try {
+            if (typeof html2canvas === 'undefined') {
+                await new Promise<void>((resolve, reject) => {
+                    const s = document.createElement('script');
+                    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                    s.onload = () => resolve();
+                    s.onerror = () => reject(new Error('Failed to load html2canvas'));
+                    document.head.appendChild(s);
+                });
+            }
             const canvas = await html2canvas(document.body, {
                  ignoreElements: (element) => element.id === 'control-bar',
                  logging: false,
@@ -610,7 +646,7 @@ Body: ${emailToSummarize.body}`);
 
                 {toast && (
                     // Notification Card
-                    <div className={`toast-card absolute bottom-36 left-1/2 -translate-x-1/2 bg-zinc-800/95 backdrop-blur-xl text-white px-8 py-6 rounded-[2rem] shadow-3xl z-[9999] animate-in slide-in-from-bottom-10 fade-in duration-300 border border-zinc-700/50 pointer-events-auto flex flex-col gap-2 transition-all ${toast.title === 'Summary' ? 'w-[60rem] max-w-[95vw]' : 'max-w-lg w-full'}`}>
+                    <div className={`toast-card absolute bottom-32 left-1/2 -translate-x-1/2 bg-zinc-800/95 backdrop-blur-xl text-white px-5 sm:px-8 py-4 sm:py-6 rounded-[1.5rem] sm:rounded-[2rem] shadow-3xl z-[9999] animate-in slide-in-from-bottom-10 fade-in duration-300 border border-zinc-700/50 pointer-events-auto flex flex-col gap-2 transition-all ${toast.title === 'Summary' ? 'w-[min(42rem,92vw)]' : 'w-[min(32rem,92vw)]'}`}>
                         {toast.title ? (
                             <>
                                 <div className="flex items-center gap-3 border-b border-white/10 pb-3 mb-1">
@@ -618,9 +654,9 @@ Body: ${emailToSummarize.body}`);
                                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
                                       <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span>
                                     </span>
-                                    <h3 className={`${toast.title === 'Summary' ? 'text-5xl' : 'text-2xl'} font-bold text-sky-400 tracking-tight`}>{toast.title}</h3>
+                                    <h3 className={`${toast.title === 'Summary' ? 'text-2xl sm:text-4xl' : 'text-xl sm:text-2xl'} font-bold text-sky-400 tracking-tight`}>{toast.title}</h3>
                                 </div>
-                                <div className={`text-zinc-200 leading-normal whitespace-pre-wrap ${toast.title === 'Summary' ? 'text-2xl' : 'text-base'}`}>
+                                <div className={`text-zinc-200 leading-normal whitespace-pre-wrap ${toast.title === 'Summary' ? 'text-base sm:text-xl' : 'text-sm sm:text-base'}`}>
                                     {toast.message}
                                 </div>
                             </>

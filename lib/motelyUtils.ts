@@ -51,7 +51,7 @@ export const formatDisplayName = (name: string): string => {
         "Soul": "The Soul",
         "MrBones": "Mr. Bones",
         "ChaostheClown": "Chaos the Clown",
-        "ChaosTheClown": "Chaosthe Clown",
+        "ChaosTheClown": "Chaos the Clown",
         "ShootTheMoon": "Shoot the Moon",
         "RideTheBus": "Ride the Bus",
         "HitTheRoad": "Hit the Road",

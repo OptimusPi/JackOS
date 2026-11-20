@@ -8,7 +8,17 @@ import satori from 'satori';
 import { initWasm, Resvg } from '@resvg/resvg-wasm';
 import { GoogleGenAI, Type } from '@google/genai';
 import type { Tool } from '@google/genai';
+import bootsharp, {
+  JamlConfigLoader,
+  MotelyBossBlind,
+  MotelyItemType,
+  MotelyJamlyzer,
+  MotelyJoker,
+  MotelyLuck,
+  MotelyVoucher,
+} from 'motely-wasm';
 import { buildSeedOgElement, parseSeedOgParams } from './lib/ogCardTemplate.ts';
+import { formatDisplayName } from './lib/motelyUtils.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +47,92 @@ function getBalatroFontBuffer(): Buffer | null {
     }
   }
   return null;
+}
+
+interface ServerSeedSnapshot {
+  boss: string;
+  voucher: string;
+  souls: string[];
+  shop: string[];
+}
+
+let serverMotelyReady: Promise<void> | null = null;
+function ensureServerMotely(): Promise<void> {
+  if (!serverMotelyReady) {
+    serverMotelyReady = bootsharp.boot().then(() => undefined);
+  }
+  return serverMotelyReady;
+}
+
+const seedSnapshotCache = new Map<string, ServerSeedSnapshot>();
+const MAX_SEED_CACHE = 250;
+
+async function analyzeSeedOnServer(
+  seed: string,
+  deck: string,
+  stake: string,
+  anteNum: number
+): Promise<ServerSeedSnapshot | null> {
+  const cleanSeed = seed.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+  if (!cleanSeed) return null;
+  const targetAnte = Number.isFinite(anteNum) && anteNum >= 0 && anteNum <= 8 ? anteNum : 1;
+  const cacheKey = `${cleanSeed}|${deck}|${stake}|${targetAnte}`;
+  const hit = seedSnapshotCache.get(cacheKey);
+  if (hit) {
+    // Refresh LRU order
+    seedSnapshotCache.delete(cacheKey);
+    seedSnapshotCache.set(cacheKey, hit);
+    return hit;
+  }
+
+  try {
+    await ensureServerMotely();
+    const cfg = JamlConfigLoader.fromJaml(
+      JSON.stringify({ deck, stake, seeds: [cleanSeed] })
+    );
+    const list = MotelyJamlyzer.analyze(cfg, 8, 8, {
+      luck: MotelyLuck.X1,
+      jokers: new Int32Array(0),
+      vouchers: new Int32Array(0),
+    });
+    const first = list[0];
+    if (!first) return null;
+
+    const anteData = first.antes.find((a) => a.ante === targetAnte) ?? first.antes[0];
+    const bossRaw = anteData
+      ? (MotelyBossBlind as unknown as Record<number, string>)[anteData.boss]
+      : undefined;
+    const voucherRaw = anteData
+      ? (MotelyVoucher as unknown as Record<number, string>)[anteData.voucher]
+      : undefined;
+
+    const souls = first.legendaryOrder.slice(0, 4).map((l) => {
+      const nameRaw = (MotelyJoker as unknown as Record<number, string>)[l.joker] ?? String(l.joker);
+      return `${formatDisplayName(nameRaw)} (A${l.ante})`;
+    });
+
+    const shop = (anteData?.shopItems ?? []).slice(0, 6).map((item) => {
+      const raw = (MotelyItemType as unknown as Record<number, string>)[item.type] ?? `Item #${item.type}`;
+      return formatDisplayName(raw);
+    });
+
+    const snapshot: ServerSeedSnapshot = {
+      boss: bossRaw ? formatDisplayName(bossRaw) : 'Live Ante 1–8 Map',
+      voucher: voucherRaw ? formatDisplayName(voucherRaw) : 'Full Shop & Packs',
+      souls,
+      shop,
+    };
+
+    if (seedSnapshotCache.size >= MAX_SEED_CACHE) {
+      const oldest = seedSnapshotCache.keys().next().value;
+      if (oldest) seedSnapshotCache.delete(oldest);
+    }
+    seedSnapshotCache.set(cacheKey, snapshot);
+    return snapshot;
+  } catch (err) {
+    console.warn('Server Motely analyze fallback for', cleanSeed, err);
+    return null;
+  }
 }
 
 const TEXT_MODEL = process.env.VERTEX_TEXT_MODEL || 'gemini-4-hydrogen';
@@ -514,64 +610,162 @@ Write crisp, punchy Balatro tooltip copy that directly references the actual ite
     }
   });
 
+  const renderOgPng = async (queryObj: Record<string, unknown>, res: Response) => {
+    await ensureResvgWasm();
+    const fontData = getBalatroFontBuffer();
+    const enrichedQuery: Record<string, unknown> = { ...queryObj };
+
+    // If a seed is given without explicit boss/voucher/souls/shop, compute real Motely RNG server-side!
+    const rawSeed = typeof enrichedQuery.seed === 'string' ? enrichedQuery.seed.trim() : '';
+    const needsAutoData =
+      Boolean(rawSeed) &&
+      !enrichedQuery.boss &&
+      !enrichedQuery.voucher &&
+      !enrichedQuery.souls &&
+      !enrichedQuery.shop;
+
+    if (needsAutoData) {
+      const deckStr =
+        typeof enrichedQuery.deck === 'string' && enrichedQuery.deck.trim()
+          ? enrichedQuery.deck.trim()
+          : 'Ghost';
+      const stakeStr =
+        typeof enrichedQuery.stake === 'string' && enrichedQuery.stake.trim()
+          ? enrichedQuery.stake.trim()
+          : 'White';
+      const anteNum = Number(enrichedQuery.ante ?? 1);
+      const snap = await analyzeSeedOnServer(rawSeed, deckStr, stakeStr, anteNum);
+      if (snap) {
+        enrichedQuery.boss = snap.boss;
+        enrichedQuery.voucher = snap.voucher;
+        if (snap.souls.length > 0) enrichedQuery.souls = snap.souls.join(', ');
+        if (snap.shop.length > 0) enrichedQuery.shop = snap.shop.join(', ');
+      }
+    }
+
+    const params = parseSeedOgParams(enrichedQuery);
+    const element = buildSeedOgElement({ ...params, hasBalatroFont: Boolean(fontData) });
+
+    const svg = await satori(element, {
+      width: 1200,
+      height: 630,
+      fonts: fontData
+        ? [
+            {
+              name: 'm6x11plus',
+              data: fontData,
+              style: 'normal',
+              weight: 400,
+            },
+          ]
+        : [],
+    });
+
+    const png = new Resvg(svg, { fitTo: { mode: 'width', value: 1200 } }).render().asPng();
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(Buffer.from(png));
+  };
+
   // 4. Real @vercel/og (satori + resvg-wasm) 1200x630 Balatro Seed Social Share Card PNG
   app.get('/api/og', async (req: Request, res: Response) => {
     try {
-      await ensureResvgWasm();
-      const fontData = getBalatroFontBuffer();
-      const params = parseSeedOgParams(req.query as Record<string, unknown>);
-      const element = buildSeedOgElement({ ...params, hasBalatroFont: Boolean(fontData) });
-
-      const svg = await satori(element, {
-        width: 1200,
-        height: 630,
-        fonts: fontData
-          ? [
-              {
-                name: 'm6x11plus',
-                data: fontData,
-                style: 'normal',
-                weight: 400,
-              },
-            ]
-          : [],
-      });
-
-      const png = new Resvg(svg, { fitTo: { mode: 'width', value: 1200 } }).render().asPng();
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Cache-Control', 'public, max-age=300');
-      res.send(Buffer.from(png));
+      await renderOgPng(req.query as Record<string, unknown>, res);
     } catch (err) {
       console.error('Server /api/og error:', err);
       res.status(500).json({ error: getErrorMessage(err) });
     }
   });
 
-  const injectSeedOgMeta = (html: string, req: Request): string => {
-    const seed = typeof req.query.seed === 'string' ? req.query.seed.trim().toUpperCase() : '';
-    if (!seed) return html;
-    const deck = typeof req.query.deck === 'string' ? req.query.deck.trim() : 'Ghost';
-    const stake = typeof req.query.stake === 'string' ? req.query.stake.trim() : 'White';
-    const ante = typeof req.query.ante === 'string' ? req.query.ante.trim() : '1';
-    const qs = new URLSearchParams({ seed, deck, stake, ante });
-    if (typeof req.query.boss === 'string') qs.set('boss', req.query.boss);
-    if (typeof req.query.voucher === 'string') qs.set('voucher', req.query.voucher);
-    if (typeof req.query.souls === 'string') qs.set('souls', req.query.souls);
-    if (typeof req.query.shop === 'string') qs.set('shop', req.query.shop);
+  // Clean .png path alias for Discord / Twitter bots (/api/og/seed/ALEEB.png)
+  app.get('/api/og/seed/:seedPng', async (req: Request, res: Response) => {
+    try {
+      const rawParam = String(req.params.seedPng || '').replace(/\.png$/i, '');
+      await renderOgPng({ ...(req.query as Record<string, unknown>), seed: rawParam }, res);
+    } catch (err) {
+      console.error('Server /api/og/seed error:', err);
+      res.status(500).json({ error: getErrorMessage(err) });
+    }
+  });
+
+  const getAbsoluteOrigin = (req: Request): string => {
+    const envUrl = process.env.APP_URL?.trim();
+    if (envUrl && /^https?:\/\//i.test(envUrl)) {
+      return envUrl.replace(/\/+$/, '');
+    }
+    const xfProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+    const proto = xfProto || req.protocol || 'https';
+    const xfHost = String(req.headers['x-forwarded-host'] || '').split(',')[0].trim();
+    const host = xfHost || req.headers.host || 'localhost:3000';
+    return `${proto}://${host}`;
+  };
+
+  const escapeAttr = (val: string): string =>
+    val.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const injectSeedOgMeta = async (html: string, req: Request): Promise<string> => {
+    const origin = getAbsoluteOrigin(req);
+    const pathMatch = req.path.match(/^\/seed\/([A-Za-z0-9_-]{1,24})\/?$/i);
+    const pathSeed = pathMatch ? pathMatch[1].trim().toUpperCase() : '';
+    const querySeed = typeof req.query.seed === 'string' ? req.query.seed.trim().toUpperCase() : '';
+    const seed = pathSeed || querySeed;
+
+    if (!seed) {
+      const defaultOg = `${origin}/api/og`;
+      return html
+        .replace(/property="og:url" content="[^"]*"/, `property="og:url" content="${escapeAttr(origin + req.originalUrl)}"`)
+        .replace(/rel="canonical" href="[^"]*"/, `rel="canonical" href="${escapeAttr(origin + req.path)}"`)
+        .replace(/property="og:image" content="[^"]*"/, `property="og:image" content="${escapeAttr(defaultOg)}"`)
+        .replace(/property="og:image:secure_url" content="[^"]*"/, `property="og:image:secure_url" content="${escapeAttr(defaultOg)}"`)
+        .replace(/name="twitter:image" content="[^"]*"/, `name="twitter:image" content="${escapeAttr(defaultOg)}"`);
+    }
+
+    const deck = typeof req.query.deck === 'string' && req.query.deck.trim() ? req.query.deck.trim() : 'Ghost';
+    const stake = typeof req.query.stake === 'string' && req.query.stake.trim() ? req.query.stake.trim() : 'White';
+    const ante = typeof req.query.ante === 'string' && req.query.ante.trim() ? req.query.ante.trim() : '1';
+    const qs = new URLSearchParams({ deck, stake, ante });
+    if (typeof req.query.boss === 'string' && req.query.boss.trim()) qs.set('boss', req.query.boss.trim());
+    if (typeof req.query.voucher === 'string' && req.query.voucher.trim()) qs.set('voucher', req.query.voucher.trim());
+    if (typeof req.query.souls === 'string' && req.query.souls.trim()) qs.set('souls', req.query.souls.trim());
+    if (typeof req.query.shop === 'string' && req.query.shop.trim()) qs.set('shop', req.query.shop.trim());
 
     const safeSeed = seed.replace(/[^A-Z0-9_-]/g, '');
+    const snap = await analyzeSeedOnServer(safeSeed, deck, stake, Number(ante));
+    const bossText =
+      (typeof req.query.boss === 'string' && req.query.boss.trim()) || snap?.boss || '';
+    const voucherText =
+      (typeof req.query.voucher === 'string' && req.query.voucher.trim()) || snap?.voucher || '';
+    const soulsText =
+      (typeof req.query.souls === 'string' && req.query.souls.trim()) ||
+      (snap && snap.souls.length > 0 ? snap.souls.join(', ') : '');
+
     const title = `Seed ${safeSeed} (${deck} / ${stake}) – seedfinder.app`;
-    const desc = `Inspect Balatro seed ${safeSeed} on ${deck} Deck (${stake} Stake): Ante 1–8 shop queues, booster packs, Soul Legendaries, and interactive run routing.`;
-    const ogImg = `/api/og?${qs.toString()}`;
+    const metaDetails = [
+      bossText ? `Boss: ${bossText}` : '',
+      voucherText ? `Voucher: ${voucherText}` : '',
+      soulsText ? `Souls: ${soulsText}` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+    const desc = metaDetails
+      ? `Balatro seed ${safeSeed} (${deck} Deck, ${stake} Stake) — ${metaDetails}. Open the live Ante 1–8 JAML Map & shop queues.`
+      : `Balatro seed ${safeSeed} on ${deck} Deck (${stake} Stake). Inspect the live Ante 1–8 JAML Map, shop queues, booster packs, and Soul Legendaries.`;
+    const ogImg = `${origin}/api/og/seed/${encodeURIComponent(safeSeed)}.png?${qs.toString()}`;
+    const canonicalUrl = `${origin}/seed/${encodeURIComponent(safeSeed)}`;
+    const pageUrl = `${origin}${req.originalUrl}`;
 
     return html
-      .replace(/<title>.*?<\/title>/, `<title>${title}</title>`)
-      .replace(/property="og:title" content="[^"]*"/, `property="og:title" content="${title}"`)
-      .replace(/name="twitter:title" content="[^"]*"/, `name="twitter:title" content="${title}"`)
-      .replace(/property="og:description" content="[^"]*"/, `property="og:description" content="${desc}"`)
-      .replace(/name="twitter:description" content="[^"]*"/, `name="twitter:description" content="${desc}"`)
-      .replace(/property="og:image" content="[^"]*"/, `property="og:image" content="${ogImg}"`)
-      .replace(/name="twitter:image" content="[^"]*"/, `name="twitter:image" content="${ogImg}"`);
+      .replace(/<title>.*?<\/title>/, `<title>${escapeAttr(title)}</title>`)
+      .replace(/name="description" content="[^"]*"/, `name="description" content="${escapeAttr(desc)}"`)
+      .replace(/property="og:url" content="[^"]*"/, `property="og:url" content="${escapeAttr(pageUrl)}"`)
+      .replace(/rel="canonical" href="[^"]*"/, `rel="canonical" href="${escapeAttr(canonicalUrl)}"`)
+      .replace(/property="og:title" content="[^"]*"/, `property="og:title" content="${escapeAttr(title)}"`)
+      .replace(/name="twitter:title" content="[^"]*"/, `name="twitter:title" content="${escapeAttr(title)}"`)
+      .replace(/property="og:description" content="[^"]*"/, `property="og:description" content="${escapeAttr(desc)}"`)
+      .replace(/name="twitter:description" content="[^"]*"/, `name="twitter:description" content="${escapeAttr(desc)}"`)
+      .replace(/property="og:image" content="[^"]*"/, `property="og:image" content="${escapeAttr(ogImg)}"`)
+      .replace(/property="og:image:secure_url" content="[^"]*"/, `property="og:image:secure_url" content="${escapeAttr(ogImg)}"`)
+      .replace(/name="twitter:image" content="[^"]*"/, `name="twitter:image" content="${escapeAttr(ogImg)}"`);
   };
 
   if (process.env.NODE_ENV !== 'production') {
@@ -584,7 +778,8 @@ Write crisp, punchy Balatro tooltip copy that directly references the actual ite
     app.get('/{*splat}', async (req, res, next) => {
       try {
         const raw = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
-        const transformed = await vite.transformIndexHtml(req.originalUrl, injectSeedOgMeta(raw, req));
+        const injected = await injectSeedOgMeta(raw, req);
+        const transformed = await vite.transformIndexHtml(req.originalUrl, injected);
         res.status(200).set({ 'Content-Type': 'text/html' }).end(transformed);
       } catch (e) {
         next(e);
@@ -593,9 +788,14 @@ Write crisp, punchy Balatro tooltip copy that directly references the actual ite
   } else {
     const distDir = path.resolve(__dirname, 'dist');
     app.use(express.static(distDir, { index: false }));
-    app.get('/{*splat}', (req, res) => {
-      const raw = fs.readFileSync(path.join(distDir, 'index.html'), 'utf-8');
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(injectSeedOgMeta(raw, req));
+    app.get('/{*splat}', async (req, res, next) => {
+      try {
+        const raw = fs.readFileSync(path.join(distDir, 'index.html'), 'utf-8');
+        const injected = await injectSeedOgMeta(raw, req);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(injected);
+      } catch (e) {
+        next(e);
+      }
     });
   }
 
