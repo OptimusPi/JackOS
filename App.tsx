@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useRef } from 'react';
-import { MousePointer2, PenLine, Play, Mail, Presentation, Folder, Loader2, FileText, Image as ImageIcon, Gamepad2, Eraser } from 'lucide-react';
+import { MousePointer2, PenLine, Play, Mail, Presentation, Folder, Loader2, FileText, Image as ImageIcon, Gamepad2, Eraser, RotateCcw } from 'lucide-react';
 import { AppId, DesktopItem, Stroke, Email } from './types';
 import { HomeScreen } from './components/apps/HomeScreen';
 import { MailApp } from './components/apps/MailApp';
@@ -15,7 +15,7 @@ import { InkLayer } from './components/InkLayer';
 import { analyzeInk, summarizeText, generateWallpaper } from './lib/gemini';
 import { NotepadApp } from './components/apps/NotepadApp';
 import { JamlSearcher } from './components/apps/JamlSearcher';
-import { BalatroBackdrop } from './components/balatro-ui';
+import { AttributionBanner, BalatroBackdrop } from './components/balatro-ui';
 
 const WeeJokerApp: React.FC = () => (
     <div className="h-full w-full bg-white">
@@ -63,7 +63,7 @@ GLOBAL / DESKTOP
 MAIL APP
 --------
 1. Delete Email: 
-   Draw a horizontal line (strike-through) or an "X" over an email row.
+   Draw a horizontal line (cross-through) or an "X" over an email row.
 
 2. Summarize Email: 
    Draw a question mark "?" over an email row or highlight it to get a one-sentence summary of the email body.
@@ -137,7 +137,7 @@ const INITIAL_EMAILS: Email[] = [
     { id: 10, from: 'Gym', subject: 'Membership Renewal', preview: 'Your annual membership is due for renewal next month...', body: 'Hi Member,\n\nJust a friendly reminder that your membership expires in 30 days. Renew now to lock in current rates!', time: 'Sep 20', unread: false },
     { id: 11, from: 'Utility Co', subject: 'Bill is Ready', preview: 'Your electric bill for August is $145.32...', body: 'Your bill is ready to view and pay. Total amount due: $145.32. Due date: Oct 15.', time: 'Sep 15', unread: false },
     { id: 12, from: 'Travel Agent', subject: 'Flight Confirmation: NYC to LON', preview: 'Booking Ref: ABCDEF. See attached itinerary...', body: 'Thank you for booking with us. Your flight to London is confirmed. Please find your e-tickets attached.', time: 'Sep 10', unread: false },
-    { id: 13, from: 'Team Lead', subject: 'Code Review Reminder', preview: 'Please review PR #456 before EOD today...', body: 'Hey,\n\nCan you take a look at PR #456 when you get a chance? We need to merge it before the release cut.', time: 'Sep 9', unread: false },
+    { id: 13, from: 'Team Lead', subject: 'Code Review Reminder', preview: 'Please review PR #456 before EOD today...', body: 'Hey,\n\nCan you review PR #456 when you get a chance? We need to merge it before the release window.', time: 'Sep 9', unread: false },
     { id: 14, from: 'Security', subject: 'Password Expiry Notice', preview: 'Your corporate account password will expire in 5 days...', body: 'Automated Notice:\n\nYour password will expire in 5 days. Please change it via the self-service portal to avoid being locked out.', time: 'Sep 5', unread: false },
     { id: 15, from: 'Coffee Shop', subject: 'Free Birthday Drink!', preview: 'Happy Birthday month! Come in for a free drink on us...', body: 'Happy Birthday! Pop in anytime this month and show this email for a free tall beverage of your choice.', time: 'Sep 1', unread: false },
 ];
@@ -570,8 +570,8 @@ Body: ${emailToSummarize.body}`);
             className="h-full w-full bg-black text-os-text font-sans overflow-hidden relative" 
             onPointerDownCapture={handleGlobalPointerDown}
         >
-            {/* Floating Control Capsule - Smaller padding (p-4 -> p-3), lowered slightly (bottom-12 -> bottom-10) */}
-            <div id="control-bar" className="fixed bottom-10 left-1/2 -translate-x-1/2 flex flex-row items-center justify-center p-3 balatro-panel z-[3000] drop-shadow-2xl">
+            {/* Floating Control Capsule */}
+            <div id="control-bar" className="fixed bottom-12 left-1/2 -translate-x-1/2 flex flex-row items-center justify-center p-3 balatro-panel z-[3000] drop-shadow-2xl">
                 
                 <div className="flex items-center gap-3">
                     <button onClick={() => setInkMode(false)} className={`${buttonBaseClasses} border-2 ${!inkMode ? 'bg-[#0093ff] border-[#b9c2d2] text-white' : 'bg-[#3a5055] border-[#b9c2d2] text-zinc-400 hover:text-zinc-200'}`} title="Cursor Mode">
@@ -583,6 +583,13 @@ Body: ${emailToSummarize.body}`);
                         {glossOverlay}
                         <PenLine size={ICON_SIZE} className="relative z-10 drop-shadow-[0_1px_2px_rgba(0,0,0,0.15)]" />
                     </button>
+
+                    {wallpaperUrl && (
+                        <button onClick={() => setWallpaperUrl(null)} className={`${buttonBaseClasses} border-2 bg-[#3a5055] border-[#b9c2d2] text-[#f5b841] hover:text-white`} title="Reset Wallpaper to Balatro Shader">
+                            {glossOverlay}
+                            <RotateCcw size={ICON_SIZE} className="relative z-10 drop-shadow-[0_1px_2px_rgba(0,0,0,0.15)]" />
+                        </button>
+                    )}
                 </div>
                 
                 {/* Vertical Separator - Shorter (h-12 -> h-8), tighter margin (mx-5 -> mx-3) */}
@@ -607,9 +614,17 @@ Body: ${emailToSummarize.body}`);
                 className="h-full w-full relative overflow-hidden bg-zinc-900 transition-all duration-1000 ease-in-out crt"
             >
                 <BalatroBackdrop preset="menu" />
+                {wallpaperUrl && (
+                    <img
+                        src={wallpaperUrl}
+                        alt="Generated desktop wallpaper"
+                        referrerPolicy="no-referrer"
+                        className="pointer-events-none absolute inset-0 z-[1] h-full w-full object-cover"
+                    />
+                )}
                 
                 {/* Background Home Screen (Clicking it focuses desktop) */}
-                <div className="h-full w-full" onMouseDown={() => focusWindow(null)}>
+                <div className="relative z-[2] h-full w-full pb-12" onMouseDown={() => focusWindow(null)}>
                      <HomeScreen items={desktopItems} onLaunch={handleLaunch} />
                 </div>
 
@@ -621,7 +636,16 @@ Body: ${emailToSummarize.body}`);
                     else if (win.item.appId === 'slides') content = <SlidesApp />;
                     else if (win.item.appId === 'snake') content = <SnakeGame />;
                     else if (win.item.appId === 'notepad') content = <NotepadApp initialContent={win.item.notepadInitialContent} />;
-                    else if (win.item.appId === 'jaml-searcher') content = <JamlSearcher isFullscreen={false} onToggleDesktop={() => setFullScreenSeedfinder(true)} />;
+                    else if (win.item.appId === 'jaml-searcher') content = (
+                        <JamlSearcher
+                            isFullscreen={false}
+                            onToggleDesktop={() => setFullScreenSeedfinder(true)}
+                            onOpenWeeJoker={() => {
+                                const weeItem = INITIAL_DESKTOP_ITEMS.find(i => i.appId === 'wee-joker');
+                                if (weeItem) handleLaunch(weeItem);
+                            }}
+                        />
+                    );
                     else if (win.item.appId === 'wee-joker') content = <WeeJokerApp />;
 
                     return (
@@ -672,6 +696,7 @@ Body: ${emailToSummarize.body}`);
                     </div>
                 )}
             </div>
+            <AttributionBanner className="fixed bottom-0 inset-x-0 z-[2500]" />
         </div>
         )
     );

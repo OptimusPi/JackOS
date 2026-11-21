@@ -243,7 +243,9 @@ export function buildSeedOgElement(params: SeedOgParams): React.ReactElement {
                   h(
                     'div',
                     { key: 'none', style: { display: 'flex', color: '#b7c7ca', fontSize: '24px' } },
-                    'Deterministic Ante 1-8 Analysis'
+                    Number(ante) > 8
+                      ? `Deterministic Ante 1-${ante} Analysis`
+                      : 'Deterministic Ante 1-8 Analysis'
                   ),
                 ])
           )

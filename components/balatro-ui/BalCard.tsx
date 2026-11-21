@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Tooltip } from 'jaml-ui';
 import { MotelyItem } from 'motely-wasm';
 import { DecodedCardInfo, decodeItem } from '../../lib/motelySprites';
 
@@ -44,13 +45,6 @@ export const BalCard: React.FC<BalCardProps> = ({
   const info = useMemo(() => decodeItem(item), [item]);
   const height = Math.round(width * (95 / 71));
   const [tilt, setTilt] = useState<{ rx: number; ry: number; gx: number; gy: number } | null>(null);
-  const [hovered, setHovered] = useState(false);
-
-  const handlePointerEnter = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === 'mouse') {
-      setHovered(true);
-    }
-  };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType !== 'mouse') return;
@@ -58,8 +52,8 @@ export const BalCard: React.FC<BalCardProps> = ({
     const px = (e.clientX - rect.left) / rect.width;
     const py = (e.clientY - rect.top) / rect.height;
     setTilt({
-      rx: (0.5 - py) * 20,
-      ry: (px - 0.5) * 22,
+      rx: (0.5 - py) * 18,
+      ry: (px - 0.5) * 20,
       gx: px * 100,
       gy: py * 100,
     });
@@ -67,7 +61,6 @@ export const BalCard: React.FC<BalCardProps> = ({
 
   const handlePointerLeave = () => {
     setTilt(null);
-    setHovered(false);
   };
 
   const stickers = [
@@ -76,45 +69,54 @@ export const BalCard: React.FC<BalCardProps> = ({
     info.isRental && 'Rental',
   ].filter(Boolean) as string[];
 
-  return (
-    <div
-      className="relative flex flex-col items-center gap-1 select-none group"
-      style={{ width: width + 8 }}
-      onPointerEnter={handlePointerEnter}
-      onPointerMove={handlePointerMove}
-      onPointerLeave={handlePointerLeave}
-      onClick={onClick}
-    >
-      {/* Floating Balatro Tooltip on hover */}
-      {hovered && (
-        <div
-          role="tooltip"
-          className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[60] w-max max-w-[210px] rounded-[6px] border-2 border-[#b9c2d2] bg-[#253336] px-2.5 py-1.5 text-left shadow-[0_4px_0_rgba(0,0,0,0.65)]"
-        >
-          <div className="text-[15px] leading-tight text-white [text-shadow:1px_1px_0_rgba(0,0,0,0.8)]">
-            {info.name}
-          </div>
-          <div className="text-[12px] text-[#b7c7ca] leading-snug">
-            {info.category}
-            {info.edition ? ` · ${info.edition}` : ''}
-            {info.enhancement ? ` · ${info.enhancement}` : ''}
-            {info.seal ? ` · ${info.seal} Seal` : ''}
-          </div>
-          {stickers.length > 0 && (
-            <div className="text-[12px] text-[#f5b841] leading-snug">
-              {stickers.join(' · ')}
-            </div>
-          )}
+  const tooltipBody = (
+    <div className="flex flex-col gap-0.5 text-left">
+      <div className="text-[15px] leading-tight text-white">{info.name}</div>
+      <div className="text-[12px] text-[var(--j-text-muted)] leading-snug">
+        {info.category}
+        {info.edition ? ` · ${info.edition}` : ''}
+        {info.enhancement ? ` · ${info.enhancement}` : ''}
+        {info.seal ? ` · ${info.seal} Seal` : ''}
+      </div>
+      {stickers.length > 0 && (
+        <div className="text-[12px] text-[var(--j-gold)] leading-snug">
+          {stickers.join(' · ')}
         </div>
       )}
+    </div>
+  );
 
-      {/* 3D Tilting Card Face */}
+  return (
+    <Tooltip content={tooltipBody} side="top" delay={140}>
       <div
-        className={`bal-card-3d relative rounded-[6px] overflow-hidden border-2 bg-[#1b272a] ${
-          selected ? 'border-[#f5b841] ring-2 ring-[#f5b841]/75' : 'border-black/85'
-        } ${
-          onClick ? 'cursor-pointer' : ''
-        } ${editionClass(info.edition)}`}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        aria-pressed={onClick ? selected : undefined}
+        className={`relative flex flex-col items-center gap-1 select-none group ${
+          onClick ? 'rounded-[6px] focus-visible:outline-2 focus-visible:outline-[var(--j-focus)] focus-visible:outline-offset-2' : ''
+        }`}
+        style={{ width: width + 8 }}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+        onClick={onClick}
+        onKeyDown={
+          onClick
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onClick();
+                }
+              }
+            : undefined
+        }
+      >
+        {/* 3D Tilting Card Face */}
+        <div
+          className={`bal-card-3d relative rounded-[6px] overflow-hidden border-2 bg-[#1b272a] ${
+            selected ? 'border-[var(--j-gold)] ring-2 ring-[var(--j-gold)]/75' : 'border-black/85'
+          } ${
+            onClick ? 'cursor-pointer' : ''
+          } ${editionClass(info.edition)}`}
         style={{
           width,
           height,
@@ -209,6 +211,7 @@ export const BalCard: React.FC<BalCardProps> = ({
           {info.name}
         </span>
       )}
-    </div>
+      </div>
+    </Tooltip>
   );
 };

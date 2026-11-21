@@ -110,8 +110,8 @@ function resolveSpriteForEnumName(name: string): SpriteCell | null {
 }
 
 /**
- * Parses YAML or JSON JAML text into a strongly typed `JamlFilter` using the
- * real `motely-wasm` `JamlConfigLoader.toJson` engine (no fake jaml-lang!).
+ * Parses YAML or JSON JAML text into a strongly typed `JamlFilter` using
+ * `motely-wasm`'s `JamlConfigLoader.toJson` engine.
  */
 export function parseJamlToFilter(text: string): {
   filter: JamlFilter | null;
@@ -385,7 +385,7 @@ export function extractEditableClauseFields(
     antes = [rawAntes];
   } else if (Array.isArray(rawAntes)) {
     antes = Array.from(
-      new Set(rawAntes.filter((n): n is number => typeof n === 'number' && n >= 0 && n <= 8))
+      new Set(rawAntes.filter((n): n is number => typeof n === 'number' && n >= 0 && n <= 39))
     ).sort((a, b) => a - b);
   }
 
@@ -589,6 +589,8 @@ export function buildTypedClause(params: {
     if (Object.keys(src).length > 0) raw.sources = src;
   } else if ((kind === 'tarotCard' || kind === 'spectralCard') && sourcePreset === 'shop4') {
     raw.sources = { shopItems: [1, 2, 3, 4] };
+  } else if ((kind === 'tarotCard' || kind === 'spectralCard') && sourcePreset === 'shop10') {
+    raw.sources = { shopItems: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] };
   } else if ((kind === 'tarotCard' || kind === 'spectralCard') && sourcePreset === 'boosterPacks') {
     raw.sources = { boosterPacks: [1, 2, 3, 4] };
   }
@@ -609,10 +611,11 @@ export function extractSeedsFromJaml(rawText: string, filter?: JamlFilter | null
   const pushClean = (val: unknown) => {
     if (typeof val !== 'string') return;
     const cleaned = val
+      .replace(/#.*$/, '')
       .replace(/^['"]|['"]$/g, '')
       .trim()
       .toUpperCase();
-    if (cleaned && /^[A-Z0-9_-]{2,24}$/.test(cleaned)) {
+    if (cleaned && /^[A-Z0-9_-]{1,24}$/.test(cleaned)) {
       collected.push(cleaned);
     }
   };
@@ -647,7 +650,7 @@ export function extractSeedsFromJaml(rawText: string, filter?: JamlFilter | null
         inlineMatch[1].split(',').forEach(pushClean);
       }
       // Single YAML: seed: ALEEB
-      const singleMatch = trimmed.match(/^\s*seed\s*:\s*['"]?([A-Za-z0-9_-]+)['"]?/m);
+      const singleMatch = trimmed.match(/^\s*seed\s*:\s*['"]?([A-Za-z0-9_-]+)['"]?\s*(#.*)?$/m);
       if (singleMatch) {
         pushClean(singleMatch[1]);
       }
@@ -677,7 +680,7 @@ export function extractSeedsFromJaml(rawText: string, filter?: JamlFilter | null
   return Array.from(new Set(collected));
 }
 
-export interface AnteClauseHit {
+export interface AnteClauseMatch {
   section: ClauseSection;
   clauseKey: string;
   targetText: string;
@@ -687,48 +690,188 @@ export interface AnteClauseHit {
 }
 
 export interface SeedMapEvaluation {
-  hitsByAnte: Record<number, AnteClauseHit[]>;
+  matchesByAnte: Record<number, AnteClauseMatch[]>;
   totalMust: number;
   matchedMust: number;
   shouldPoints: number;
-  mustNotHits: number;
+  mustNotMatches: number;
+}
+
+export interface EvalCardEntry {
+  name: string;
+  edition: string | null;
+  location: string;
+  category?: string;
+  rarity?: 'Common' | 'Uncommon' | 'Rare' | 'Legendary' | null;
+  slot?: number;
+  sourceKind?:
+    | 'shop'
+    | 'pack'
+    | 'arcanaPack'
+    | 'spectralPack'
+    | 'soul'
+    | 'judgement'
+    | 'wraith'
+    | 'rareTag'
+    | 'uncommonTag'
+    | 'riffRaff'
+    | 'emperor'
+    | 'purpleSeal'
+    | 'sixthSense'
+    | 'seance';
+}
+
+export interface EvalPackEntry {
+  name: string;
+  location: string;
+  slot: number;
+}
+
+export interface EvalAnteDescriptor {
+  ante: number;
+  bossLabel: string;
+  voucherLabel: string;
+  smallTagLabel: string;
+  bigTagLabel: string;
+  packNames?: readonly EvalPackEntry[];
+  shopEntries: readonly EvalCardEntry[];
+  packEntries: readonly EvalCardEntry[];
+  soulEntries: readonly EvalCardEntry[];
+  pullEntries?: readonly EvalCardEntry[];
 }
 
 function normalizeToken(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function stripLeadingThe(norm: string): string {
+  return norm.startsWith('the') && norm.length > 3 ? norm.slice(3) : norm;
+}
+
+function tokensMatchExact(actualLabel: string, targetNorm: string): boolean {
+  const actualNorm = normalizeToken(actualLabel);
+  if (actualNorm === targetNorm) return true;
+  if (stripLeadingThe(actualNorm) === stripLeadingThe(targetNorm)) return true;
+  // Booster packs: label "Mega Arcana Pack" vs JAML value "MegaArcana"
+  if (actualNorm.endsWith('pack') && actualNorm.slice(0, -4) === targetNorm) return true;
+  if (targetNorm.endsWith('pack') && targetNorm.slice(0, -4) === actualNorm) return true;
+  return false;
+}
+
+function numberArrayToSet(val: unknown): Set<number> | null {
+  if (!Array.isArray(val)) return null;
+  const nums = val.filter((n): n is number => typeof n === 'number' && Number.isFinite(n));
+  return nums.length > 0 ? new Set(nums) : null;
+}
+
+function entryMatchesClauseKind(entry: EvalCardEntry, pk: string): boolean {
+  if (pk === 'joker' || pk === 'jokers') {
+    return !entry.category || entry.category === 'Joker';
+  }
+  if (pk === 'commonJoker' || pk === 'commonJokers') {
+    return entry.rarity === 'Common';
+  }
+  if (pk === 'uncommonJoker' || pk === 'uncommonJokers') {
+    return entry.rarity === 'Uncommon';
+  }
+  if (pk === 'rareJoker' || pk === 'rareJokers') {
+    return entry.rarity === 'Rare';
+  }
+  if (pk === 'legendaryJoker' || pk === 'legendaryJokers' || pk === 'soulJoker') {
+    return entry.rarity === 'Legendary' || entry.sourceKind === 'soul';
+  }
+  if (pk === 'tarotCard' || pk === 'tarotCards') {
+    return !entry.category || entry.category === 'Tarot';
+  }
+  if (pk === 'spectralCard' || pk === 'spectralCards') {
+    return !entry.category || entry.category === 'Spectral';
+  }
+  if (pk === 'planetCard' || pk === 'planetCards') {
+    return !entry.category || entry.category === 'Planet';
+  }
+  if (pk === 'standardCard' || pk === 'standardCards' || pk === 'playingCard') {
+    return !entry.category || entry.category === 'Playing Card';
+  }
+  return true;
+}
+
+function entryMatchesSources(
+  entry: EvalCardEntry,
+  sourcesObj: Record<string, unknown> | undefined
+): boolean {
+  if (!sourcesObj || typeof sourcesObj !== 'object') return true;
+  const keys = Object.keys(sourcesObj).filter(
+    (k) => k !== 'requireMega' && k !== 'requireMegaPack'
+  );
+  if (keys.length === 0) return true;
+
+  const slot = entry.slot ?? 1;
+  const kind = entry.sourceKind;
+
+  if (kind === 'shop') {
+    const shopSlots =
+      numberArrayToSet(sourcesObj.shopItems) ??
+      numberArrayToSet(sourcesObj.allShopJokers) ??
+      numberArrayToSet(sourcesObj.commonShopJokers) ??
+      numberArrayToSet(sourcesObj.uncommonShopJokers) ??
+      numberArrayToSet(sourcesObj.rareShopJokers);
+    return shopSlots ? shopSlots.has(slot) : false;
+  }
+
+  if (kind === 'pack' || kind === 'arcanaPack' || kind === 'spectralPack' || kind === 'soul') {
+    const bpSlots = numberArrayToSet(sourcesObj.boosterPacks);
+    if (bpSlots && bpSlots.has(slot)) return true;
+    const arcSlots = numberArrayToSet(sourcesObj.arcanaPacks);
+    if (arcSlots && (kind === 'arcanaPack' || kind === 'soul') && arcSlots.has(slot)) return true;
+    const specSlots = numberArrayToSet(sourcesObj.spectralPacks);
+    if (specSlots && (kind === 'spectralPack' || kind === 'soul') && specSlots.has(slot)) return true;
+    return false;
+  }
+
+  const pullKeyMap: Record<string, string> = {
+    judgement: 'judgement',
+    wraith: 'wraith',
+    rareTag: 'rareTag',
+    uncommonTag: 'uncommonTag',
+    riffRaff: 'riffRaff',
+    emperor: 'emperor',
+    purpleSeal: 'purpleSealOrEightBall',
+    sixthSense: 'sixthSense',
+    seance: 'seance',
+  };
+
+  if (kind && pullKeyMap[kind]) {
+    const allowed = numberArrayToSet(sourcesObj[pullKeyMap[kind]]);
+    return allowed ? allowed.has(slot) : false;
+  }
+
+  return false;
+}
+
 /**
  * Evaluates all clauses of a `JamlFilter` against a real `MotelyJamlyzer` seed analysis
- * so the JAML Map can highlight exact Ante-by-Ante rule matches.
+ * so the JAML Map highlights exact Ante-by-Ante rule matches with category, rarity,
+ * source-slot, booster-pack, and Erratic Deck accuracy.
  */
 export function evaluateFilterOnSeed(
   filter: JamlFilter | null,
-  antes: readonly {
-    ante: number;
-    bossLabel: string;
-    voucherLabel: string;
-    smallTagLabel: string;
-    bigTagLabel: string;
-    shopEntries: readonly { name: string; edition: string | null; location: string }[];
-    packEntries: readonly { name: string; edition: string | null; location: string }[];
-    soulEntries: readonly { name: string; edition: string | null; location: string }[];
-  }[]
+  antes: readonly EvalAnteDescriptor[],
+  erraticDeck?: readonly { rank: string; suit: string }[] | null
 ): SeedMapEvaluation {
-  const hitsByAnte: Record<number, AnteClauseHit[]> = {};
+  const matchesByAnte: Record<number, AnteClauseMatch[]> = {};
   for (const a of antes) {
-    hitsByAnte[a.ante] = [];
+    matchesByAnte[a.ante] = [];
   }
 
   if (!filter) {
-    return { hitsByAnte, totalMust: 0, matchedMust: 0, shouldPoints: 0, mustNotHits: 0 };
+    return { matchesByAnte, totalMust: 0, matchedMust: 0, shouldPoints: 0, mustNotMatches: 0 };
   }
 
   const summaries = extractAllClauses(filter);
   let totalMust = 0;
   let matchedMust = 0;
   let shouldPoints = 0;
-  let mustNotHits = 0;
+  let mustNotMatches = 0;
 
   for (const summary of summaries) {
     if (summary.section === 'must') totalMust += 1;
@@ -743,9 +886,12 @@ export function evaluateFilterOnSeed(
         : [];
     if (targetStrings.length === 0) continue;
 
-    const isAny = targetStrings.some((t) => t === 'Any');
+    const isAny = targetStrings.some((t) => t.toLowerCase() === 'any');
     const targetNorms = targetStrings.map(normalizeToken);
     const reqEdition = summary.edition ? normalizeToken(summary.edition) : null;
+    const sourcesObj = (rec.sources ?? rec.legendarySources) as
+      | Record<string, unknown>
+      | undefined;
 
     const rawAntes = rec.antes ?? rec.ante;
     const allowedAntes: Set<number> | null =
@@ -758,6 +904,37 @@ export function evaluateFilterOnSeed(
     let clauseMatchedAnyAnte = false;
     const pk = summary.primaryKey;
 
+    // Deck-wide Erratic clauses (evaluate once against starting 52-card deck)
+    if (pk === 'erraticRank' || pk === 'erraticSuit') {
+      if (erraticDeck && erraticDeck.length > 0) {
+        const minCount = typeof rec.min === 'number' ? rec.min : 1;
+        const matchedCount = erraticDeck.filter((c) => {
+          const val = pk === 'erraticRank' ? c.rank : c.suit;
+          return isAny || targetNorms.some((t) => tokensMatchExact(val, t));
+        }).length;
+        if (matchedCount >= minCount) {
+          clauseMatchedAnyAnte = true;
+          const anchorAnte = antes.find((a) => a.ante === 1)?.ante ?? antes[0]?.ante;
+          if (anchorAnte !== undefined && matchesByAnte[anchorAnte]) {
+            matchesByAnte[anchorAnte].push({
+              section: summary.section,
+              clauseKey: `${summary.section}-${summary.index}-${summary.primaryKey}`,
+              targetText: summary.targetText,
+              location: `Erratic Deck (${matchedCount}×)`,
+              edition: null,
+              score: summary.score,
+            });
+          }
+        }
+      }
+      if (clauseMatchedAnyAnte) {
+        if (summary.section === 'must') matchedMust += 1;
+        if (summary.section === 'should') shouldPoints += summary.score ?? 10;
+        if (summary.section === 'mustNot') mustNotMatches += 1;
+      }
+      continue;
+    }
+
     for (const a of antes) {
       if (allowedAntes && !allowedAntes.has(a.ante)) continue;
 
@@ -765,40 +942,59 @@ export function evaluateFilterOnSeed(
       let matchedEd: string | null = null;
 
       if (pk === 'boss' || pk === 'bosses') {
-        const bNorm = normalizeToken(a.bossLabel);
-        if (isAny || targetNorms.some((t) => bNorm === t || bNorm.includes(t))) {
+        if (isAny || targetNorms.some((t) => tokensMatchExact(a.bossLabel, t))) {
           matchedLoc = 'Boss Blind';
         }
       } else if (pk === 'voucher' || pk === 'vouchers') {
-        const vNorm = normalizeToken(a.voucherLabel);
-        if (isAny || targetNorms.some((t) => vNorm === t || vNorm.includes(t))) {
+        if (isAny || targetNorms.some((t) => tokensMatchExact(a.voucherLabel, t))) {
           matchedLoc = 'Voucher';
         }
       } else if (pk === 'tag' || pk === 'tags' || pk === 'smallBlindTag' || pk === 'bigBlindTag') {
-        const sNorm = normalizeToken(a.smallTagLabel);
-        const bNorm = normalizeToken(a.bigTagLabel);
-        if (pk !== 'bigBlindTag' && (isAny || targetNorms.some((t) => sNorm === t || sNorm.includes(t)))) {
+        if (
+          pk !== 'bigBlindTag' &&
+          (isAny || targetNorms.some((t) => tokensMatchExact(a.smallTagLabel, t)))
+        ) {
           matchedLoc = 'Small Blind Tag';
-        } else if (pk !== 'smallBlindTag' && (isAny || targetNorms.some((t) => bNorm === t || bNorm.includes(t)))) {
+        } else if (
+          pk !== 'smallBlindTag' &&
+          (isAny || targetNorms.some((t) => tokensMatchExact(a.bigTagLabel, t)))
+        ) {
           matchedLoc = 'Big Blind Tag';
+        }
+      } else if (pk === 'boosterPack' || pk === 'boosterPacks') {
+        const packs = a.packNames ?? [];
+        const allowedPackSlots = numberArrayToSet(sourcesObj?.boosterPacks);
+        for (const p of packs) {
+          if (allowedPackSlots && !allowedPackSlots.has(p.slot)) continue;
+          if (isAny || targetNorms.some((t) => tokensMatchExact(p.name, t))) {
+            matchedLoc = p.location;
+            break;
+          }
         }
       } else if (pk === 'legendaryJoker' || pk === 'legendaryJokers' || pk === 'soulJoker') {
         for (const s of a.soulEntries) {
-          const nNorm = normalizeToken(s.name);
+          if (!entryMatchesSources(s, sourcesObj)) continue;
           const edOk = !reqEdition || (s.edition ? normalizeToken(s.edition) === reqEdition : false);
-          if (edOk && (isAny || targetNorms.some((t) => nNorm === t || nNorm.includes(t)))) {
+          if (edOk && (isAny || targetNorms.some((t) => tokensMatchExact(s.name, t)))) {
             matchedLoc = s.location;
             matchedEd = s.edition;
             break;
           }
         }
       } else {
-        // Jokers, Tarots, Spectrals, Planets, Booster Packs: check shop + packs + souls
-        const pool = [...a.shopEntries, ...a.packEntries, ...a.soulEntries];
+        // Jokers (all/common/uncommon/rare), Tarots, Spectrals, Planets, Standard Cards
+        const pool: EvalCardEntry[] = [
+          ...a.shopEntries,
+          ...a.packEntries,
+          ...a.soulEntries,
+          ...(a.pullEntries ?? []),
+        ];
         for (const entry of pool) {
-          const nNorm = normalizeToken(entry.name);
-          const edOk = !reqEdition || (entry.edition ? normalizeToken(entry.edition) === reqEdition : false);
-          if (edOk && (isAny || targetNorms.some((t) => nNorm === t || nNorm.includes(t)))) {
+          if (!entryMatchesClauseKind(entry, pk)) continue;
+          if (!entryMatchesSources(entry, sourcesObj)) continue;
+          const edOk =
+            !reqEdition || (entry.edition ? normalizeToken(entry.edition) === reqEdition : false);
+          if (edOk && (isAny || targetNorms.some((t) => tokensMatchExact(entry.name, t)))) {
             matchedLoc = entry.location;
             matchedEd = entry.edition;
             break;
@@ -808,7 +1004,7 @@ export function evaluateFilterOnSeed(
 
       if (matchedLoc) {
         clauseMatchedAnyAnte = true;
-        hitsByAnte[a.ante].push({
+        matchesByAnte[a.ante].push({
           section: summary.section,
           clauseKey: `${summary.section}-${summary.index}-${summary.primaryKey}`,
           targetText: summary.targetText,
@@ -822,10 +1018,10 @@ export function evaluateFilterOnSeed(
     if (clauseMatchedAnyAnte) {
       if (summary.section === 'must') matchedMust += 1;
       if (summary.section === 'should') shouldPoints += summary.score ?? 10;
-      if (summary.section === 'mustNot') mustNotHits += 1;
+      if (summary.section === 'mustNot') mustNotMatches += 1;
     }
   }
 
-  return { hitsByAnte, totalMust, matchedMust, shouldPoints, mustNotHits };
+  return { matchesByAnte, totalMust, matchedMust, shouldPoints, mustNotMatches };
 }
 

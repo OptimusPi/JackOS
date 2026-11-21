@@ -3,35 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export enum MotelyItemSeal {
-    None = "None",
-    Red = "Red",
-    Blue = "Blue",
-    Gold = "Gold",
-    Purple = "Purple"
-}
-
-export enum MotelyItemEdition {
-    None = "None",
-    Base = "Base",
-    Foil = "Foil",
-    Holographic = "Holographic",
-    Polychrome = "Polychrome",
-    Negative = "Negative"
-}
-
-export enum MotelyItemEnhancement {
-    None = "None",
-    Bonus = "Bonus",
-    Mult = "Mult",
-    Wild = "Wild",
-    Glass = "Glass",
-    Steel = "Steel",
-    Stone = "Stone",
-    Gold = "Gold",
-    Lucky = "Lucky"
-}
-
 export const formatDisplayName = (name: string): string => {
     const specialCases: Record<string, string> = {
         "EightBall": "8 Ball",
@@ -118,16 +89,4 @@ export const formatPackName = (pack: string): string => {
         "MegaStandard": "Mega Standard Pack",
     };
     return packs[pack] || formatDisplayName(pack);
-};
-
-export const formatCard = (cardCode: string): string => {
-    const [rankCode, suitCode] = cardCode.split('_');
-    const ranks: Record<string, string> = {
-        "2": "2", "3": "3", "4": "4", "5": "5", "6": "6", "7": "7", "8": "8", "9": "9", "10": "10",
-        "J": "Jack", "Q": "Queen", "K": "King", "A": "Ace"
-    };
-    const suits: Record<string, string> = {
-        "C": "Clubs", "D": "Diamonds", "H": "Hearts", "S": "Spades"
-    };
-    return `${ranks[rankCode] || rankCode} of ${suits[suitCode] || suitCode}`;
 };

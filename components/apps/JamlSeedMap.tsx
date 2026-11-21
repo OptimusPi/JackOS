@@ -1,5 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { MotelyItem, MotelyJamlyzerSeedResult } from 'motely-wasm';
+import {
+  MotelyItem,
+  MotelyJamlyzerSeedResult,
+  MotelyStandardcardRank,
+  MotelyStandardcardSuit,
+} from 'motely-wasm';
 import type { JamlFilter } from 'motely-wasm/jaml';
 import { ArrowRight, Check, Flame, Map as MapIcon, Sparkles, X } from 'lucide-react';
 import { BalButton, BalCard, BalPanel } from '../balatro-ui';
@@ -10,8 +15,9 @@ import {
   decodePackName,
   decodeTagName,
   decodeVoucherName,
+  getJokerRarity,
 } from '../../lib/motelySprites';
-import { evaluateFilterOnSeed } from '../../lib/jamlModel';
+import { EvalCardEntry, evaluateFilterOnSeed } from '../../lib/jamlModel';
 import { playCardClick } from '../../lib/balatroSfx';
 
 export interface JamlSeedMapProps {
@@ -27,7 +33,7 @@ export interface JamlSeedMapProps {
   onJumpToAnteShop: (ante: number) => void;
 }
 
-type MapFilterMode = 'all' | 'hits' | 'souls';
+type MapFilterMode = 'all' | 'matches' | 'souls';
 
 export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
   seed,
@@ -43,11 +49,11 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
 }) => {
   const [mapMode, setMapMode] = useState<MapFilterMode>('all');
 
-  // Build normalized Ante 1–8 map descriptors once per seed analysis
+  // Build normalized per-Ante map descriptors once per seed analysis
   const anteDescriptors = useMemo(() => {
     const soulsByAnte = new Map<
       number,
-      { name: string; edition: string | null; location: string; item: MotelyItem; packSlot: number }[]
+      (EvalCardEntry & { item: MotelyItem; packSlot: number })[]
     >();
     for (const leg of result.legendaryOrder) {
       const dec = decodeItem(leg.item);
@@ -56,6 +62,10 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
         name: decodeJokerEnumName(leg.joker),
         edition: dec.edition,
         location: `Soul Pack #${leg.packSlot + 1}`,
+        category: 'Joker',
+        rarity: 'Legendary',
+        slot: leg.packSlot + 1,
+        sourceKind: 'soul',
         item: leg.item,
         packSlot: leg.packSlot,
       });
@@ -72,32 +82,77 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
             name: dec.name,
             edition: dec.edition,
             location: `Shop #${idx + 1}`,
+            category: dec.category,
+            rarity: dec.category === 'Joker' ? getJokerRarity(dec.rawName) : null,
+            slot: idx + 1,
+            sourceKind: 'shop' as const,
             item: it,
             idx,
           };
         });
-        const packEntries: {
-          name: string;
-          edition: string | null;
-          location: string;
-          item: MotelyItem;
-        }[] = [];
+
+        const packNames = a.packs.map((pk, pIdx) => ({
+          name: decodePackName(pk.pack),
+          location: `Pack #${pIdx + 1} (${decodePackName(pk.pack)})`,
+          slot: pIdx + 1,
+        }));
+
+        const packEntries: (EvalCardEntry & { item: MotelyItem })[] = [];
         a.packs.forEach((pk, pIdx) => {
           const pkName = decodePackName(pk.pack);
+          const pkLower = pkName.toLowerCase();
+          const sourceKind = pkLower.includes('arcana')
+            ? ('arcanaPack' as const)
+            : pkLower.includes('spectral')
+            ? ('spectralPack' as const)
+            : ('pack' as const);
           pk.items.forEach((it) => {
             const dec = decodeItem(it);
             packEntries.push({
               name: dec.name,
               edition: dec.edition,
               location: `Pack #${pIdx + 1} (${pkName})`,
+              category: dec.category,
+              rarity: dec.category === 'Joker' ? getJokerRarity(dec.rawName) : null,
+              slot: pIdx + 1,
+              sourceKind,
               item: it,
             });
           });
         });
 
+        const pullEntries: EvalCardEntry[] = [];
+        const addPulls = (
+          items: readonly MotelyItem[],
+          prefix: string,
+          sourceKind: NonNullable<EvalCardEntry['sourceKind']>
+        ) => {
+          items.forEach((it, idx) => {
+            const dec = decodeItem(it);
+            pullEntries.push({
+              name: dec.name,
+              edition: dec.edition,
+              location: `${prefix} #${idx + 1}`,
+              category: dec.category,
+              rarity: dec.category === 'Joker' ? getJokerRarity(dec.rawName) : null,
+              slot: idx + 1,
+              sourceKind,
+            });
+          });
+        };
+        addPulls(a.pulls.judgementJokers, 'Judgement', 'judgement');
+        addPulls(a.pulls.wraithJokers, 'Wraith', 'wraith');
+        addPulls(a.pulls.rareTagJokers, 'Rare Tag', 'rareTag');
+        addPulls(a.pulls.uncommonTagJokers, 'Uncommon Tag', 'uncommonTag');
+        addPulls(a.pulls.riffRaffJokers, 'Riff-Raff', 'riffRaff');
+        addPulls(a.pulls.emperorTarots, 'Emperor', 'emperor');
+        addPulls(a.pulls.purpleSealTarots, 'Purple Seal', 'purpleSeal');
+        addPulls(a.pulls.sixthSenseSpectrals, 'Sixth Sense', 'sixthSense');
+        addPulls(a.pulls.seanceSpectrals, 'Séance', 'seance');
+
         const soulEntries = soulsByAnte.get(a.ante) ?? [];
 
-        // Highlight noteworthy shop cards first (editions, rares, key jokers) while keeping slots 1-4 visible
+        // Preview the first 4 shop slots inline in the compact map row
         const previewShop = shopEntries.slice(0, 4);
 
         return {
@@ -107,37 +162,51 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
           smallTagLabel: decodeTagName(a.smallBlindTag),
           bigTagLabel: decodeTagName(a.bigBlindTag),
           packCount: a.packs.length,
+          packNames,
           shopEntries,
           packEntries,
           soulEntries,
+          pullEntries,
           previewShop,
         };
       });
   }, [result, shopByAnte]);
 
+  const erraticDeckSummary = useMemo(() => {
+    if (!result.erraticDeck || result.erraticDeck.length === 0) return null;
+    const rankMap = MotelyStandardcardRank as unknown as Record<number, string>;
+    const suitMap = MotelyStandardcardSuit as unknown as Record<number, string>;
+    return result.erraticDeck.map((card) => ({
+      rank: rankMap[card.standardcardRank] ?? String(card.standardcardRank),
+      suit: suitMap[card.standardcardSuit] ?? String(card.standardcardSuit),
+    }));
+  }, [result.erraticDeck]);
+
   const evaluation = useMemo(
-    () => evaluateFilterOnSeed(activeFilter, anteDescriptors),
-    [activeFilter, anteDescriptors]
+    () => evaluateFilterOnSeed(activeFilter, anteDescriptors, erraticDeckSummary),
+    [activeFilter, anteDescriptors, erraticDeckSummary]
   );
 
   const visibleAntes = useMemo(() => {
-    if (mapMode === 'hits') {
-      return anteDescriptors.filter((a) => (evaluation.hitsByAnte[a.ante]?.length ?? 0) > 0);
+    if (mapMode === 'matches') {
+      return anteDescriptors.filter((a) => (evaluation.matchesByAnte[a.ante]?.length ?? 0) > 0);
     }
     if (mapMode === 'souls') {
       return anteDescriptors.filter((a) => a.soulEntries.length > 0);
     }
     return anteDescriptors;
-  }, [anteDescriptors, evaluation.hitsByAnte, mapMode]);
+  }, [anteDescriptors, evaluation.matchesByAnte, mapMode]);
 
-  const totalHitsCount = useMemo(
+  const totalMatchesCount = useMemo(
     () =>
-      Object.values(evaluation.hitsByAnte).reduce<number>(
+      Object.values(evaluation.matchesByAnte).reduce<number>(
         (acc, list) => acc + (Array.isArray(list) ? list.length : 0),
         0
       ),
-    [evaluation.hitsByAnte]
+    [evaluation.matchesByAnte]
   );
+
+  const maxLoadedAnte = anteDescriptors[anteDescriptors.length - 1]?.ante ?? 8;
 
   return (
     <div className="flex flex-col gap-3 w-full min-w-0">
@@ -155,7 +224,7 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
         {/* Coverage Readout Grid (Mobile 3-col) */}
         <div className="grid grid-cols-3 gap-1.5 text-center">
           <div className="rounded-[6px] border border-[#162022] bg-[#182426]/90 px-2 py-1.5">
-            <div className="text-[11px] uppercase text-[#b7c7ca]">MUST Hits</div>
+            <div className="text-[11px] uppercase text-[#b7c7ca]">MUST Matches</div>
             <div className="text-[16px] font-bold tabular-nums text-[#7be0b4]">
               {evaluation.totalMust > 0
                 ? `${evaluation.matchedMust}/${evaluation.totalMust}`
@@ -188,19 +257,19 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
               setMapMode('all');
             }}
           >
-            All (1–8)
+            All (1–{maxLoadedAnte})
           </BalButton>
           <BalButton
-            tone={mapMode === 'hits' ? 'green' : 'slate'}
+            tone={mapMode === 'matches' ? 'green' : 'slate'}
             size="xs"
             block
-            active={mapMode === 'hits'}
+            active={mapMode === 'matches'}
             onClick={() => {
               playCardClick(1.08);
-              setMapMode('hits');
+              setMapMode('matches');
             }}
           >
-            JAML ({totalHitsCount})
+            JAML ({totalMatchesCount})
           </BalButton>
           <BalButton
             tone={mapMode === 'souls' ? 'purple' : 'slate'}
@@ -224,7 +293,7 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
       {/* Vertical Topological Ante 1 -> Ante 8 Route Spine */}
       {visibleAntes.length === 0 ? (
         <BalPanel className="text-center py-6 text-[14px] text-[#b7c7ca]">
-          No Antes match this map filter. Switch back to <strong>All (1–8)</strong> to view the full run roadmap.
+          No Antes match this map filter. Switch back to <strong>All (1–{maxLoadedAnte})</strong> to view the full run roadmap.
         </BalPanel>
       ) : (
         <div className="relative flex flex-col gap-2.5 pl-4 sm:pl-5">
@@ -235,9 +304,9 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
           />
 
           {visibleAntes.map((node) => {
-            const hits = evaluation.hitsByAnte[node.ante] ?? [];
-            const hasMust = hits.some((h) => h.section === 'must');
-            const hasExclude = hits.some((h) => h.section === 'mustNot');
+            const matches = evaluation.matchesByAnte[node.ante] ?? [];
+            const hasMust = matches.some((m) => m.section === 'must');
+            const hasExclude = matches.some((m) => m.section === 'mustNot');
             const hasSoul = node.soulEntries.length > 0;
             const isSelected = selectedAnte === node.ante;
 
@@ -292,7 +361,7 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
                       {hasMust && (
                         <span className="inline-flex items-center gap-0.5 rounded-[4px] bg-[#4bc292] px-1.5 py-0.5 text-[11px] font-bold text-[#0f1d18]">
                           <Check size={10} strokeWidth={3} />
-                          JAML Hit
+                          JAML Match
                         </span>
                       )}
                     </div>
@@ -331,32 +400,32 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
                   </div>
 
                   {/* Live JAML Filter Clause Matches for this Ante */}
-                  {hits.length > 0 && (
+                  {matches.length > 0 && (
                     <div className="flex flex-col gap-1 rounded-[6px] border border-[#4bc292]/40 bg-[#173c2f]/65 p-2">
                       <div className="text-[11px] uppercase tracking-wider text-[#7be0b4]">
                         Matched JAML Rules
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        {hits.map((hit, idx) => (
+                        {matches.map((match, idx) => (
                           <span
-                            key={`${hit.clauseKey}-${idx}`}
+                            key={`${match.clauseKey}-${idx}`}
                             className={`inline-flex items-center gap-1 rounded-[4px] border px-1.5 py-0.5 text-[11px] font-medium ${
-                              hit.section === 'must'
+                              match.section === 'must'
                                 ? 'border-[#4bc292] bg-[#4bc292]/20 text-[#9ff2cf]'
-                                : hit.section === 'should'
+                                : match.section === 'should'
                                 ? 'border-[#f5b841] bg-[#f5b841]/20 text-[#ffe19c]'
                                 : 'border-[#fe5f55] bg-[#fe5f55]/20 text-[#ffb5b0]'
                             }`}
                           >
-                            {hit.section === 'mustNot' ? (
+                            {match.section === 'mustNot' ? (
                               <X size={11} />
-                            ) : hit.section === 'should' ? (
+                            ) : match.section === 'should' ? (
                               <Flame size={11} />
                             ) : (
                               <Check size={11} />
                             )}
-                            <span>{hit.targetText}</span>
-                            <span className="opacity-75">· {hit.location}</span>
+                            <span>{match.targetText}</span>
+                            <span className="opacity-75">· {match.location}</span>
                           </span>
                         ))}
                       </div>

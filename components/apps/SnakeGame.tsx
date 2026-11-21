@@ -5,7 +5,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Play, RotateCcw } from 'lucide-react';
-import { BalButton } from '../ui/JimboUI';
+import { BalButton } from '../balatro-ui';
 
 export const SnakeGame: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -117,7 +117,7 @@ export const SnakeGame: React.FC = () => {
         if (s.keys.right) s.playerX = Math.min(width - s.playerW, s.playerX + speed);
 
         // Shooting
-        if (s.keys.space && timestamp - s.lastShot > 250) { // Fire rate 250ms
+        if (s.keys.space && timestamp - s.lastShot > 250) { // Toss cadence 250ms
             s.bullets.push({
                 x: s.playerX + s.playerW / 2 - 2, // Center of player
                 y: height - s.playerH - 20,
@@ -265,7 +265,7 @@ export const SnakeGame: React.FC = () => {
                         className="text-5xl font-black text-white mb-6 tracking-tighter drop-shadow-[0_0_25px_rgba(74,222,128,0.4)]"
                         style={{ fontFamily: "'m6x11plus', monospace" }}
                     >
-                        BALATRO DEFENSE
+                        BALATRO ARCADE
                     </div>
                     
                     {gameOver && <div className="text-3xl text-red-500 font-bold mb-2 animate-pulse" style={{ fontFamily: "'m6x11plus', monospace" }}>GAME OVER</div>}
@@ -274,7 +274,7 @@ export const SnakeGame: React.FC = () => {
                     {!gameOver && (
                         <div className="text-zinc-400 mb-8 text-center space-y-2 text-sm" style={{ fontFamily: "'m6x11plus', monospace" }}>
                             <p>Use <span className="text-white font-bold bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded">←</span> <span className="text-white font-bold bg-zinc-800 border border-zinc-700 px-1.5 py-0.5 rounded">→</span> to move</p>
-                            <p>Press <span className="text-white font-bold bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded">SPACE</span> to fire</p>
+                            <p>Press <span className="text-white font-bold bg-zinc-800 border border-zinc-700 px-2 py-0.5 rounded">SPACE</span> to toss chips</p>
                         </div>
                     )}
 
@@ -285,7 +285,7 @@ export const SnakeGame: React.FC = () => {
                     >
                         <div className="flex items-center gap-3">
                             {gameOver ? <RotateCcw size={20} /> : <Play size={20} fill="currentColor" />}
-                            {gameOver ? "RETRY MISSION" : "START GAME"}
+                            {gameOver ? "PLAY AGAIN" : "START GAME"}
                         </div>
                     </BalButton>
                 </div>

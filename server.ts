@@ -18,64 +18,7 @@ import bootsharp, {
   MotelyVoucher,
 } from 'motely-wasm';
 import { buildSeedOgElement, parseSeedOgParams } from './lib/ogCardTemplate.ts';
-
-const SPECIAL_DISPLAY_NAMES: Record<string, string> = {
-  EightBall: '8 Ball',
-  Cloud9: 'Cloud 9',
-  OopsAll6s: 'Oops! All 6s',
-  ToTheMoon: 'To the Moon',
-  ToDoList: 'To Do List',
-  RiffRaff: 'Riff-raff',
-  MailInRebate: 'Mail In Rebate',
-  TheWheel: 'The Wheel',
-  TheWheelOfFortune: 'The Wheel of Fortune',
-  SockandBuskin: 'Sock and Buskin',
-  SockAndBuskin: 'Sock and Buskin',
-  DriversLicense: "Driver's License",
-  DirectorsCut: "Director's Cut",
-  PlanetX: 'Planet X',
-  Soul: 'The Soul',
-  MrBones: 'Mr. Bones',
-  ChaostheClown: 'Chaos the Clown',
-  ChaosTheClown: 'Chaos the Clown',
-  ShootTheMoon: 'Shoot the Moon',
-  RideTheBus: 'Ride the Bus',
-  HitTheRoad: 'Hit the Road',
-  TheVerdant: 'Verdant Leaf',
-  VerdantLeaf: 'Verdant Leaf',
-  VioletVessel: 'Violet Vessel',
-  CrimsonHeart: 'Crimson Heart',
-  AmberAcorn: 'Amber Acorn',
-  CeruleanBell: 'Cerulean Bell',
-  TheFool: 'The Fool',
-  TheMagician: 'The Magician',
-  TheHighPriestess: 'The High Priestess',
-  TheEmpress: 'The Empress',
-  TheEmperor: 'The Emperor',
-  TheHierophant: 'The Hierophant',
-  TheLovers: 'The Lovers',
-  TheChariot: 'The Chariot',
-  TheHermit: 'The Hermit',
-  TheHangedMan: 'The Hanged Man',
-  TheDevil: 'The Devil',
-  TheTower: 'The Tower',
-  TheStar: 'The Star',
-  TheMoon: 'The Moon',
-  TheSun: 'The Sun',
-  TheWorld: 'The World',
-};
-
-function formatDisplayName(name: string): string {
-  if (SPECIAL_DISPLAY_NAMES[name]) return SPECIAL_DISPLAY_NAMES[name];
-  let result = '';
-  for (let i = 0; i < name.length; i++) {
-    if (i > 0 && name[i] === name[i].toUpperCase() && name[i - 1] !== name[i - 1].toUpperCase()) {
-      result += ' ';
-    }
-    result += name[i];
-  }
-  return result;
-}
+import { formatDisplayName } from './lib/motelyUtils.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -132,21 +75,23 @@ async function analyzeSeedOnServer(
 ): Promise<ServerSeedSnapshot | null> {
   const cleanSeed = seed.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
   if (!cleanSeed) return null;
-  const targetAnte = Number.isFinite(anteNum) && anteNum >= 0 && anteNum <= 8 ? anteNum : 1;
+  const targetAnte = Number.isFinite(anteNum) && anteNum >= 0 && anteNum <= 39 ? Math.floor(anteNum) : 1;
   const cacheKey = `${cleanSeed}|${deck}|${stake}|${targetAnte}`;
-  const hit = seedSnapshotCache.get(cacheKey);
-  if (hit) {
+  const cached = seedSnapshotCache.get(cacheKey);
+  if (cached) {
     // Refresh LRU order
     seedSnapshotCache.delete(cacheKey);
-    seedSnapshotCache.set(cacheKey, hit);
-    return hit;
+    seedSnapshotCache.set(cacheKey, cached);
+    return cached;
   }
 
   try {
     await ensureServerMotely();
-    const cfg = JamlConfigLoader.fromJaml(
-      JSON.stringify({ deck, stake, seeds: [cleanSeed] })
-    );
+    const payload: Record<string, unknown> = { deck, stake, seeds: [cleanSeed] };
+    if (targetAnte > 8) {
+      payload.should = [{ joker: 'Any', antes: [0, targetAnte] }];
+    }
+    const cfg = JamlConfigLoader.fromJaml(JSON.stringify(payload));
     const list = MotelyJamlyzer.analyze(cfg, 8, 8, {
       luck: MotelyLuck.X1,
       jokers: new Int32Array(0),
@@ -173,8 +118,9 @@ async function analyzeSeedOnServer(
       return formatDisplayName(raw);
     });
 
+    const anteRangeText = targetAnte > 8 ? `Ante 1–${targetAnte}` : 'Ante 1–8';
     const snapshot: ServerSeedSnapshot = {
-      boss: bossRaw ? formatDisplayName(bossRaw) : 'Live Ante 1–8 Map',
+      boss: bossRaw ? formatDisplayName(bossRaw) : `Live ${anteRangeText} Map`,
       voucher: voucherRaw ? formatDisplayName(voucherRaw) : 'Full Shop & Packs',
       souls,
       shop,
@@ -268,7 +214,7 @@ const MAIL_TOOLS: Tool[] = [
       {
         name: 'delete_email',
         description:
-          'Call this when the user draws a line through (strikes out) or an "X" over an email row in the list to delete it. Call multiple times if multiple emails are struck out.',
+          'Call this when the user draws a line through (crosses out) or an "X" over an email row in the list to delete it. Call multiple times if multiple emails are crossed out.',
         parameters: {
           type: Type.OBJECT,
           required: ['subject_text'],
@@ -542,7 +488,7 @@ async function startServer() {
           ? 'a Balatro Planet Card (celestial body name, poker hand level-up vibe, cosmic astronomy humor)'
           : cardStyle === 'spectral'
           ? 'a Balatro Spectral Card (eerie occult ritual name, high-risk high-reward spectral pact)'
-          : 'a Balatro Joker Card (punchy iconic Joker title, witty mechanics tied to real Balatro synergies)';
+          : 'a Balatro Joker Card (clever iconic Joker title, witty mechanics tied to real Balatro synergies)';
 
       const response = await ai.models.generateContent({
         model: TEXT_MODEL,
@@ -556,7 +502,7 @@ Real deterministic seed data:
 - Soul Legendaries: ${souls.length > 0 ? souls.join(', ') : 'None in early Antes'}
 - Notable Shop Drops: ${shopItems.length > 0 ? shopItems.slice(0, 8).join(', ') : 'Mixed pool'}
 
-Write crisp, punchy Balatro tooltip copy that directly references the actual items/souls/boss in this seed. Keep cardName under 24 characters and abilityLines to 2-3 short lines (each under 46 characters) using Balatro syntax like "+50 Chips", "+15 Mult", "X3 Mult", or "$10".`,
+Write crisp, playful, non-violent Balatro tooltip copy that directly references the actual items/souls/boss in this seed. Keep cardName under 24 characters and abilityLines to 2-3 short lines (each under 46 characters) using Balatro syntax like "+50 Chips", "+15 Mult", "X3 Mult", or "$10".`,
         config: {
           responseMimeType: 'application/json',
           responseSchema: {
@@ -580,7 +526,12 @@ Write crisp, punchy Balatro tooltip copy that directly references the actual ite
         },
       });
 
-      const parsed = JSON.parse((response.text ?? '{}').trim());
+      const rawText = (response.text ?? '{}')
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim();
+      const parsed = JSON.parse(rawText || '{}') as Record<string, unknown>;
       res.json({ ...parsed, provider, model: TEXT_MODEL });
     } catch (err) {
       console.error('Server /api/vertex/seed-card-lore error:', err);
@@ -804,9 +755,12 @@ Write crisp, punchy Balatro tooltip copy that directly references the actual ite
     ]
       .filter(Boolean)
       .join(' · ');
+    const anteNumVal = Number(ante);
+    const anteRangeLabel =
+      Number.isFinite(anteNumVal) && anteNumVal > 8 ? `Ante 1–${Math.min(39, Math.floor(anteNumVal))}` : 'Ante 1–8';
     const desc = metaDetails
-      ? `Balatro seed ${safeSeed} (${deck} Deck, ${stake} Stake) — ${metaDetails}. Open the live Ante 1–8 JAML Map & shop queues.`
-      : `Balatro seed ${safeSeed} on ${deck} Deck (${stake} Stake). Inspect the live Ante 1–8 JAML Map, shop queues, booster packs, and Soul Legendaries.`;
+      ? `Balatro seed ${safeSeed} (${deck} Deck, ${stake} Stake) — ${metaDetails}. Open the live ${anteRangeLabel} JAML Map & shop queues.`
+      : `Balatro seed ${safeSeed} on ${deck} Deck (${stake} Stake). Inspect the live ${anteRangeLabel} JAML Map, shop queues, booster packs, and Soul Legendaries.`;
     const ogImg = `${origin}/api/og/seed/${encodeURIComponent(safeSeed)}.png?${qs.toString()}`;
     const canonicalUrl = `${origin}/seed/${encodeURIComponent(safeSeed)}`;
     const pageUrl = `${origin}${req.originalUrl}`;

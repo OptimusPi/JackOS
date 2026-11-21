@@ -12,6 +12,7 @@ import bootsharp, {
   MotelyTag,
   MotelyVoucher,
 } from 'motely-wasm';
+import jamlVocab from 'motely-wasm/jaml/vocab.json';
 import { SHEETS } from './balatro';
 import { formatDisplayName, formatPackName } from './motelyUtils';
 
@@ -374,25 +375,78 @@ const POPULAR_JOKERS = [
   'Cavendish',
 ];
 
-const ALL_JOKER_CLAUSE_ITEMS: { value: string; label: string }[] = (() => {
+const VOCAB_ENUMS = jamlVocab.enums;
+
+const COMMON_JOKER_SET = new Set<string>(VOCAB_ENUMS.MotelyJokerCommon);
+const UNCOMMON_JOKER_SET = new Set<string>(VOCAB_ENUMS.MotelyJokerUncommon);
+const RARE_JOKER_SET = new Set<string>(VOCAB_ENUMS.MotelyJokerRare);
+const LEGENDARY_JOKER_SET = new Set<string>(VOCAB_ENUMS.MotelyJokerLegendary);
+
+export function getJokerRarity(
+  enumOrRawName: string
+): 'Common' | 'Uncommon' | 'Rare' | 'Legendary' | null {
+  if (LEGENDARY_JOKER_SET.has(enumOrRawName)) return 'Legendary';
+  if (RARE_JOKER_SET.has(enumOrRawName)) return 'Rare';
+  if (UNCOMMON_JOKER_SET.has(enumOrRawName)) return 'Uncommon';
+  if (COMMON_JOKER_SET.has(enumOrRawName)) return 'Common';
+  return null;
+}
+
+function buildOrderedCatalog(
+  allValues: readonly string[],
+  popularFirst: readonly string[],
+  options?: {
+    anyEntry?: { value: string; label: string };
+    formatLabel?: (value: string) => string;
+    labelOverrides?: Record<string, string>;
+  }
+): { value: string; label: string }[] {
+  const formatFn = options?.formatLabel ?? formatDisplayName;
+  const overrides = options?.labelOverrides ?? {};
+  const labelFor = (val: string) => overrides[val] ?? formatFn(val);
+
+  const validSet = new Set(allValues);
   const seen = new Set<string>();
-  const out: { value: string; label: string }[] = [{ value: 'Any', label: 'Any Joker' }];
-  const allKeys = Object.keys(MotelyJoker).filter(
-    (k) => Number.isNaN(Number(k)) && k !== 'None' && k !== 'Invalid'
-  );
-  const keySet = new Set(allKeys);
-  for (const pop of POPULAR_JOKERS) {
-    if (keySet.has(pop) && !seen.has(pop)) {
+  const out: { value: string; label: string }[] = [];
+
+  if (options?.anyEntry) {
+    out.push(options.anyEntry);
+  }
+
+  for (const pop of popularFirst) {
+    if (validSet.has(pop) && !seen.has(pop)) {
       seen.add(pop);
-      out.push({ value: pop, label: formatDisplayName(pop) });
+      out.push({ value: pop, label: labelFor(pop) });
     }
   }
-  const rest = allKeys
-    .filter((k) => !seen.has(k))
-    .map((k) => ({ value: k, label: formatDisplayName(k) }))
+
+  const rest = allValues
+    .filter((v) => !seen.has(v))
+    .map((v) => ({ value: v, label: labelFor(v) }))
     .sort((a, b) => a.label.localeCompare(b.label));
+
   return [...out, ...rest];
-})();
+}
+
+const ALL_JOKER_CLAUSE_ITEMS = buildOrderedCatalog(VOCAB_ENUMS.MotelyJoker, POPULAR_JOKERS, {
+  anyEntry: { value: 'Any', label: 'Any Joker' },
+});
+
+const RANK_LABELS: Record<string, string> = {
+  Ace: 'Aces',
+  King: 'Kings',
+  Queen: 'Queens',
+  Jack: 'Jacks',
+  Ten: '10s',
+  Nine: '9s',
+  Eight: '8s',
+  Seven: '7s',
+  Six: '6s',
+  Five: '5s',
+  Four: '4s',
+  Three: '3s',
+  Two: '2s (Wee Joker!)',
+};
 
 export const JAML_CLAUSE_ITEMS: Record<
   | 'joker'
@@ -409,112 +463,162 @@ export const JAML_CLAUSE_ITEMS: Record<
 > = {
   joker: ALL_JOKER_CLAUSE_ITEMS,
   legendaryJoker: [
-    { value: 'Perkeo', label: 'Perkeo' },
-    { value: 'Triboulet', label: 'Triboulet' },
-    { value: 'Canio', label: 'Canio' },
-    { value: 'Yorick', label: 'Yorick' },
-    { value: 'Chicot', label: 'Chicot' },
+    ...buildOrderedCatalog(VOCAB_ENUMS.MotelyJokerLegendary, [
+      'Perkeo',
+      'Triboulet',
+      'Canio',
+      'Yorick',
+      'Chicot',
+    ]),
     { value: 'Any', label: 'Any Legendary' },
   ],
-  rareJoker: [
-    { value: 'Any', label: 'Any Rare Joker' },
-    { value: 'Blueprint', label: 'Blueprint' },
-    { value: 'Brainstorm', label: 'Brainstorm' },
-    { value: 'WeeJoker', label: 'Wee Joker' },
-    { value: 'Baron', label: 'Baron' },
-    { value: 'DNA', label: 'DNA' },
-    { value: 'InvisibleJoker', label: 'Invisible Joker' },
-    { value: 'Stuntman', label: 'Stuntman' },
-    { value: 'BurntJoker', label: 'Burnt Joker' },
-    { value: 'BaseballCard', label: 'Baseball Card' },
-    { value: 'Vagabond', label: 'Vagabond' },
-  ],
-  voucher: [
-    { value: 'Overstock', label: 'Overstock' },
-    { value: 'ClearanceSale', label: 'Clearance Sale' },
-    { value: 'Hone', label: 'Hone' },
-    { value: 'RerollSurplus', label: 'Reroll Surplus' },
-    { value: 'CrystalBall', label: 'Crystal Ball' },
-    { value: 'Telescope', label: 'Telescope' },
-    { value: 'Grabber', label: 'Grabber' },
-    { value: 'Wasteful', label: 'Wasteful' },
-    { value: 'TarotMerchant', label: 'Tarot Merchant' },
-    { value: 'PlanetMerchant', label: 'Planet Merchant' },
-    { value: 'SeedMoney', label: 'Seed Money' },
-    { value: 'Blank', label: 'Blank' },
-    { value: 'Antimatter', label: 'Antimatter' },
-    { value: 'Hieroglyph', label: 'Hieroglyph' },
-    { value: 'DirectorsCut', label: "Director's Cut" },
-    { value: 'PaintBrush', label: 'Paint Brush' },
-  ],
-  tag: [
-    { value: 'NegativeTag', label: 'Negative Tag' },
-    { value: 'PolychromeTag', label: 'Polychrome Tag' },
-    { value: 'RareTag', label: 'Rare Tag' },
-    { value: 'InvestmentTag', label: 'Investment Tag' },
-    { value: 'CharmTag', label: 'Charm Tag' },
-    { value: 'EtherealTag', label: 'Ethereal Tag' },
-    { value: 'DoubleTag', label: 'Double Tag' },
-    { value: 'VoucherTag', label: 'Voucher Tag' },
-    { value: 'CouponTag', label: 'Coupon Tag' },
-    { value: 'D6Tag', label: 'D6 Tag' },
-    { value: 'BuffoonTag', label: 'Buffoon Tag' },
-  ],
-  boss: [
-    { value: 'ThePlant', label: 'The Plant' },
-    { value: 'TheNeedle', label: 'The Needle' },
-    { value: 'TheWater', label: 'The Water' },
-    { value: 'TheWall', label: 'The Wall' },
-    { value: 'TheHook', label: 'The Hook' },
-    { value: 'ThePsychic', label: 'The Psychic' },
-    { value: 'TheEye', label: 'The Eye' },
-    { value: 'TheMouth', label: 'The Mouth' },
-    { value: 'TheSerpent', label: 'The Serpent' },
-    { value: 'VioletVessel', label: 'Violet Vessel' },
-    { value: 'CrimsonHeart', label: 'Crimson Heart' },
-    { value: 'VerdantLeaf', label: 'Verdant Leaf' },
-    { value: 'AmberAcorn', label: 'Amber Acorn' },
-  ],
-  tarotCard: [
-    { value: 'TheFool', label: 'The Fool' },
-    { value: 'Death', label: 'Death' },
-    { value: 'TheHermit', label: 'The Hermit' },
-    { value: 'Temperance', label: 'Temperance' },
-    { value: 'TheHangedMan', label: 'The Hanged Man' },
-    { value: 'TheChariot', label: 'The Chariot' },
-    { value: 'Justice', label: 'Justice' },
-    { value: 'TheWheelOfFortune', label: 'Wheel of Fortune' },
-    { value: 'Judgement', label: 'Judgement' },
-  ],
-  spectralCard: [
-    { value: 'TheSoul', label: 'The Soul' },
-    { value: 'BlackHole', label: 'Black Hole' },
-    { value: 'Cryptid', label: 'Cryptid' },
-    { value: 'DejaVu', label: 'Deja Vu' },
-    { value: 'Ankh', label: 'Ankh' },
-    { value: 'Hex', label: 'Hex' },
-    { value: 'Immolate', label: 'Immolate' },
-    { value: 'Ectoplasm', label: 'Ectoplasm' },
-    { value: 'Wraith', label: 'Wraith' },
-  ],
-  boosterPack: [
-    { value: 'MegaArcana', label: 'Mega Arcana Pack' },
-    { value: 'JumboArcana', label: 'Jumbo Arcana Pack' },
-    { value: 'MegaSpectral', label: 'Mega Spectral Pack' },
-    { value: 'JumboSpectral', label: 'Jumbo Spectral Pack' },
-    { value: 'MegaBuffoon', label: 'Mega Buffoon Pack' },
-    { value: 'JumboBuffoon', label: 'Jumbo Buffoon Pack' },
-    { value: 'MegaCelestial', label: 'Mega Celestial Pack' },
-    { value: 'MegaStandard', label: 'Mega Standard Pack' },
-  ],
+  rareJoker: buildOrderedCatalog(
+    VOCAB_ENUMS.MotelyJokerRare,
+    [
+      'Blueprint',
+      'Brainstorm',
+      'WeeJoker',
+      'Baron',
+      'DNA',
+      'InvisibleJoker',
+      'Stuntman',
+      'BurntJoker',
+      'BaseballCard',
+      'Vagabond',
+    ],
+    { anyEntry: { value: 'Any', label: 'Any Rare Joker' } }
+  ),
+  voucher: buildOrderedCatalog(
+    VOCAB_ENUMS.MotelyVoucher,
+    [
+      'Overstock',
+      'OverstockPlus',
+      'ClearanceSale',
+      'Liquidation',
+      'Hone',
+      'GlowUp',
+      'RerollSurplus',
+      'RerollGlut',
+      'CrystalBall',
+      'OmenGlobe',
+      'Telescope',
+      'Observatory',
+      'Grabber',
+      'NachoTong',
+      'Wasteful',
+      'Recyclomancy',
+      'TarotMerchant',
+      'PlanetMerchant',
+      'SeedMoney',
+      'MoneyTree',
+      'Blank',
+      'Antimatter',
+      'Hieroglyph',
+      'Petroglyph',
+      'DirectorsCut',
+      'Retcon',
+      'PaintBrush',
+      'Palette',
+    ],
+    {
+      labelOverrides: {
+        DirectorsCut: "Director's Cut",
+        OverstockPlus: 'Overstock +',
+      },
+    }
+  ),
+  tag: buildOrderedCatalog(VOCAB_ENUMS.MotelyTag, [
+    'NegativeTag',
+    'PolychromeTag',
+    'RareTag',
+    'InvestmentTag',
+    'CharmTag',
+    'EtherealTag',
+    'DoubleTag',
+    'VoucherTag',
+    'CouponTag',
+    'D6Tag',
+    'BuffoonTag',
+  ]),
+  boss: buildOrderedCatalog(VOCAB_ENUMS.MotelyBossBlind, [
+    'ThePlant',
+    'TheNeedle',
+    'TheWater',
+    'TheWall',
+    'TheHook',
+    'ThePsychic',
+    'TheEye',
+    'TheMouth',
+    'TheSerpent',
+    'VioletVessel',
+    'CrimsonHeart',
+    'VerdantLeaf',
+    'AmberAcorn',
+    'CeruleanBell',
+  ]),
+  tarotCard: buildOrderedCatalog(
+    VOCAB_ENUMS.MotelyTarotCard,
+    [
+      'TheFool',
+      'Death',
+      'TheHermit',
+      'Temperance',
+      'TheHangedMan',
+      'TheChariot',
+      'Justice',
+      'TheWheelOfFortune',
+      'Judgement',
+    ],
+    {
+      labelOverrides: {
+        TheWheelOfFortune: 'Wheel of Fortune',
+      },
+    }
+  ),
+  spectralCard: buildOrderedCatalog(VOCAB_ENUMS.MotelySpectralCard, [
+    'TheSoul',
+    'BlackHole',
+    'Cryptid',
+    'DejaVu',
+    'Ankh',
+    'Hex',
+    'Immolate',
+    'Ectoplasm',
+    'Wraith',
+  ]),
+  boosterPack: buildOrderedCatalog(
+    VOCAB_ENUMS.MotelyBoosterPack,
+    [
+      'MegaArcana',
+      'JumboArcana',
+      'MegaSpectral',
+      'JumboSpectral',
+      'MegaBuffoon',
+      'JumboBuffoon',
+      'MegaCelestial',
+      'MegaStandard',
+    ],
+    {
+      formatLabel: formatPackName,
+    }
+  ),
   erraticRank: [
-    { value: 'Ace', label: 'Aces' },
-    { value: 'King', label: 'Kings' },
-    { value: 'Queen', label: 'Queens' },
-    { value: 'Jack', label: 'Jacks' },
-    { value: 'Ten', label: '10s' },
-    { value: 'Two', label: '2s (Wee Joker!)' },
-  ],
+    'Ace',
+    'King',
+    'Queen',
+    'Jack',
+    'Ten',
+    'Nine',
+    'Eight',
+    'Seven',
+    'Six',
+    'Five',
+    'Four',
+    'Three',
+    'Two',
+  ]
+    .filter((r) => VOCAB_ENUMS.MotelyStandardcardRank.includes(r))
+    .map((r) => ({ value: r, label: RANK_LABELS[r] ?? r })),
 };
 
 export const DECK_OPTIONS = [

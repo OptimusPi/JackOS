@@ -6,12 +6,15 @@ import {
   JamlSearchBuilder,
   MotelyAesthetic,
   MotelyItem,
+  MotelyItemEdition,
   MotelyJamlyzer,
   MotelyJamlyzerSeedResult,
   MotelyJoker,
   MotelyLuck,
   MotelyProgress,
   MotelyScoredSeedResult,
+  MotelyStandardcardRank,
+  MotelyStandardcardSuit,
   MotelyVoucher,
   MotelyWith,
 } from 'motely-wasm';
@@ -32,7 +35,6 @@ import {
   Columns2,
   Copy,
   CopyPlus,
-  CreditCard,
   Download,
   Eraser,
   FileUp,
@@ -50,14 +52,15 @@ import {
   Route,
   Save,
   Search,
+  Settings2,
   Share2,
   SlidersHorizontal,
-  Sparkles,
   Square,
   Trash2,
   X,
 } from 'lucide-react';
 import {
+  AttributionBanner,
   BackdropPreset,
   BalButton,
   BalCard,
@@ -115,7 +118,7 @@ import {
   updateClauseInFilter,
   updateFilterDeckStake,
 } from '../../lib/jamlModel';
-import { playCardClick, playChipHit, playRerollSweep, setSfxEnabled } from '../../lib/balatroSfx';
+import { playCardClick, playChipChime, playRerollSweep, setSfxEnabled } from '../../lib/balatroSfx';
 import { exportSeedPosterPng } from '../../lib/seedCardExport';
 import { SeedCardStudio } from './SeedCardStudio';
 import { JamlSeedMap } from './JamlSeedMap';
@@ -135,18 +138,8 @@ type ClauseKind = keyof typeof JAML_CLAUSE_ITEMS;
 type AnteDepthOption = 8 | 16 | 25 | 39;
 
 const ANTE_DEPTH_OPTIONS: readonly AnteDepthOption[] = [8, 16, 25, 39];
-const QUICK_SPOTLIGHT_TERMS = [
-  'Soul',
-  'Blueprint',
-  'Brainstorm',
-  'Perkeo',
-  'Polychrome',
-  'Negative',
-  'Red Seal',
-  'Overstock',
-] as const;
 
-interface FoundSeed {
+interface SeedSearchResult {
   seed: string;
   score: number;
   rider?: MotelyJamlyzerSeedResult;
@@ -189,7 +182,7 @@ interface RoutePick {
   edition: string | null;
 }
 
-interface SpotlightHit {
+interface SpotlightMatch {
   ante: number;
   subTab: AnalyzerSubTab;
   location: string;
@@ -216,6 +209,10 @@ const AESTHETIC_ITEMS: readonly { value: string; label: string }[] = [
   { value: 'Mirror', label: 'Mirror' },
   { value: 'Repeater', label: 'Repeater' },
   { value: 'Runs', label: 'Runs' },
+  { value: 'Step', label: 'Step' },
+  { value: 'Spin', label: 'Spin' },
+  { value: 'Psychosis', label: 'Psychosis' },
+  { value: 'Gross', label: 'Gross' },
   { value: 'Pi', label: 'Pi' },
   { value: 'Fibonacci', label: 'Fibonacci' },
 ];
@@ -226,10 +223,12 @@ const LUCK_OPTIONS = [
   { value: 'X4', label: '4× (2 Oops!)' },
   { value: 'X8', label: '8× (3 Oops!)' },
   { value: 'X16', label: '16× (4 Oops!)' },
+  { value: 'X32', label: '32× (5 Oops!)' },
 ] as const;
 
 const SIM_VOUCHERS: readonly { key: keyof typeof MotelyVoucher; label: string }[] = [
   { key: 'Overstock', label: 'Overstock' },
+  { key: 'OverstockPlus', label: 'Overstock +' },
   { key: 'Hone', label: 'Hone' },
   { key: 'GlowUp', label: 'Glow Up' },
   { key: 'TarotMerchant', label: 'Tarot Merch' },
@@ -306,13 +305,6 @@ const QUICK_CLAUSES: readonly {
 const DECK_CYCLE_OPTIONS = DECK_OPTIONS.map((d) => ({ value: d, label: `${d} Deck` }));
 const STAKE_CYCLE_OPTIONS = STAKE_OPTIONS.map((s) => ({ value: s, label: `${s} Stake` }));
 const PRESET_SELECT_ITEMS = JAML_PRESETS.map((p) => ({ value: p.id, label: p.label }));
-
-function editionBadgeClass(edition: DecodedCardInfo['edition']): string {
-  if (edition === 'Foil') return 'bg-[#009dff] border-[#0068b8] text-white';
-  if (edition === 'Holographic') return 'bg-[#fe5f55] border-[#b8352e] text-white';
-  if (edition === 'Polychrome') return 'bg-[#ff9800] border-[#b86600] text-white';
-  return 'bg-[#9e74ce] border-[#6b4896] text-white';
-}
 
 function sectionBadgeColor(section: ClauseSection): { bg: string; label: string } {
   if (section === 'must') return { bg: 'bg-[#4bc292] border-[#2d8a64] text-[#0f1d18]', label: 'MUST' };
@@ -550,23 +542,27 @@ const ClauseDeckCard: React.FC<{
                 >
                   Any
                 </button>
-                {ALL_ANTES.map((n) => {
-                  const active = draft.antes.includes(n);
-                  return (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => toggleAnte(n)}
-                      className={`rounded-[4px] border-b-2 px-2 py-0.5 text-[11px] font-bold tabular-nums cursor-pointer ${
-                        active
-                          ? 'bg-[#009dff] border-[#0068b8] text-white'
-                          : 'bg-[#2a3b3f] border-[#162022] text-[#b7c7ca] hover:text-white'
-                      }`}
-                    >
-                      A{n}
-                    </button>
-                  );
-                })}
+                {Array.from(new Set([...ALL_ANTES, ...draft.antes]))
+                  .sort((a, b) => a - b)
+                  .map((n) => {
+                    const active = draft.antes.includes(n);
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => toggleAnte(n)}
+                        className={`rounded-[4px] border-b-2 px-2 py-0.5 text-[11px] font-bold tabular-nums cursor-pointer ${
+                          active
+                            ? n > 8
+                              ? 'bg-[#f5b841] border-[#b58118] text-[#182426]'
+                              : 'bg-[#009dff] border-[#0068b8] text-white'
+                            : 'bg-[#2a3b3f] border-[#162022] text-[#b7c7ca] hover:text-white'
+                        }`}
+                      >
+                        A{n}
+                      </button>
+                    );
+                  })}
               </div>
             </div>
           )}
@@ -690,12 +686,13 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
   const [reducedMotion, setReducedMotion] = useState<boolean>(false);
   const [guideOpen, setGuideOpen] = useState<boolean>(false);
   const [shareOpen, setShareOpen] = useState<boolean>(false);
-  const [mobileControlsOpen, setMobileControlsOpen] = useState<boolean>(false);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+  const [saveFilterOpen, setSaveFilterOpen] = useState<boolean>(false);
   const [cleanupNotice, setCleanupNotice] = useState<string | null>(null);
 
   // Search runtime
   const [isSearching, setIsSearching] = useState<boolean>(false);
-  const [results, setResults] = useState<FoundSeed[]>([]);
+  const [results, setResults] = useState<SeedSearchResult[]>([]);
   const [progress, setProgress] = useState<MotelyProgress | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -703,17 +700,22 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
   const activeSearchRef = useRef<IMotelySearch | null>(null);
   const activeTokenRef = useRef<CancellationToken | null>(null);
 
-  // Tabs & Analyzer state
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>(
-    initialQuery?.seed ? 'analyzer' : 'search'
-  );
-  const [analyzerSubTab, setAnalyzerSubTab] = useState<AnalyzerSubTab>('map');
+  // Tabs & Analyzer state (Blueprint-first: open directly on the Seed Table!)
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('analyzer');
+  const [analyzerSubTab, setAnalyzerSubTab] = useState<AnalyzerSubTab>('shop');
   const [seedInput, setSeedInput] = useState<string>(initialQuery?.seed || 'ALEEB');
   const [analyzed, setAnalyzed] = useState<AnalyzedState | null>(null);
   const [selectedAnte, setSelectedAnte] = useState<number>(
     initialQuery?.ante && initialQuery.ante >= 0 && initialQuery.ante <= 39 ? initialQuery.ante : 1
   );
-  const [analyzerMaxAnte, setAnalyzerMaxAnte] = useState<AnteDepthOption>(8);
+  const [analyzerMaxAnte, setAnalyzerMaxAnte] = useState<AnteDepthOption>(() => {
+    const a = initialQuery?.ante ?? 1;
+    if (a > 25) return 39;
+    if (a > 16) return 25;
+    if (a > 8) return 16;
+    return 8;
+  });
+  const lastAnalyzedSeedRef = useRef<string | null>(null);
   const [analyzerError, setAnalyzerError] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
   const [isExportingPng, setIsExportingPng] = useState<boolean>(false);
@@ -723,6 +725,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
   const [routePicks, setRoutePicks] = useState<GuideRoutePick[]>([]);
 
   // MotelyWith live simulator state (Vouchers, Showman, Held Legendaries, Luck)
+  const [simPanelOpen, setSimPanelOpen] = useState<boolean>(false);
   const [simLuckKey, setSimLuckKey] = useState<string>('X1');
   const [simShowman, setSimShowman] = useState<boolean>(false);
   const [simLegendaries, setSimLegendaries] = useState<string[]>([]);
@@ -947,17 +950,16 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
         }
         setSeedInput(cleanSeed);
         setSelectedAnte((prev) => (prev > targetMaxAnte ? 1 : prev));
-        setAnalyzed((prev) => {
-          if (prev && prev.seed !== cleanSeed) {
-            setRoutePicks([]);
-          }
-          return {
-            seed: cleanSeed,
-            deck: targetDeck,
-            stake: targetStake,
-            result: first,
-            shopByAnte,
-          };
+        if (lastAnalyzedSeedRef.current && lastAnalyzedSeedRef.current !== cleanSeed) {
+          setRoutePicks([]);
+        }
+        lastAnalyzedSeedRef.current = cleanSeed;
+        setAnalyzed({
+          seed: cleanSeed,
+          deck: targetDeck,
+          stake: targetStake,
+          result: first,
+          shopByAnte,
         });
         if (syncUrl && typeof window !== 'undefined') {
           const qs = new URLSearchParams();
@@ -1157,16 +1159,71 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       );
       if (nextList.length > 0) {
         const nextRes = nextList[0];
+        const concatInt32 = (a: Int32Array, b: Int32Array) => {
+          const out = new Int32Array(a.length + b.length);
+          out.set(a, 0);
+          out.set(b, a.length);
+          return out;
+        };
         setAnalyzed((prev) => {
           if (!prev) return prev;
           const mergedShop: Record<number, MotelyItem[]> = { ...prev.shopByAnte };
+          const nextByAnte = new Map(nextRes.antes.map((a) => [a.ante, a]));
           for (const a of nextRes.antes) {
             mergedShop[a.ante] = [...(mergedShop[a.ante] || []), ...a.shopItems];
           }
+          const mergedAntes = prev.result.antes.map((oldAnte) => {
+            const add = nextByAnte.get(oldAnte.ante);
+            if (!add) return oldAnte;
+            return {
+              ...oldAnte,
+              shopItems: [...oldAnte.shopItems, ...add.shopItems],
+              pulls: {
+                judgementJokers: [...oldAnte.pulls.judgementJokers, ...add.pulls.judgementJokers],
+                wraithJokers: [...oldAnte.pulls.wraithJokers, ...add.pulls.wraithJokers],
+                emperorTarots: [...oldAnte.pulls.emperorTarots, ...add.pulls.emperorTarots],
+                purpleSealTarots: [...oldAnte.pulls.purpleSealTarots, ...add.pulls.purpleSealTarots],
+                sixthSenseSpectrals: [...oldAnte.pulls.sixthSenseSpectrals, ...add.pulls.sixthSenseSpectrals],
+                seanceSpectrals: [...oldAnte.pulls.seanceSpectrals, ...add.pulls.seanceSpectrals],
+                riffRaffJokers: [...oldAnte.pulls.riffRaffJokers, ...add.pulls.riffRaffJokers],
+                rareTagJokers: [...oldAnte.pulls.rareTagJokers, ...add.pulls.rareTagJokers],
+                uncommonTagJokers: [...oldAnte.pulls.uncommonTagJokers, ...add.pulls.uncommonTagJokers],
+                voucherSequence: [...oldAnte.pulls.voucherSequence, ...add.pulls.voucherSequence],
+              },
+              shopStreams: {
+                shopJokers: [...oldAnte.shopStreams.shopJokers, ...add.shopStreams.shopJokers],
+                commonShopJokers: [...oldAnte.shopStreams.commonShopJokers, ...add.shopStreams.commonShopJokers],
+                uncommonShopJokers: [...oldAnte.shopStreams.uncommonShopJokers, ...add.shopStreams.uncommonShopJokers],
+                rareShopJokers: [...oldAnte.shopStreams.rareShopJokers, ...add.shopStreams.rareShopJokers],
+                shopTarots: [...oldAnte.shopStreams.shopTarots, ...add.shopStreams.shopTarots],
+                shopPlanets: [...oldAnte.shopStreams.shopPlanets, ...add.shopStreams.shopPlanets],
+                shopSpectrals: [...oldAnte.shopStreams.shopSpectrals, ...add.shopStreams.shopSpectrals],
+              },
+            };
+          });
+          const oldEv = prev.result.events;
+          const newEv = nextRes.events;
           return {
             ...prev,
             result: {
               ...prev.result,
+              antes: mergedAntes,
+              events: {
+                luckyMoney: [...oldEv.luckyMoney, ...newEv.luckyMoney],
+                luckyMult: [...oldEv.luckyMult, ...newEv.luckyMult],
+                wheelOfFortune: concatInt32(oldEv.wheelOfFortune, newEv.wheelOfFortune),
+                cavendish: [...oldEv.cavendish, ...newEv.cavendish],
+                grosMichel: [...oldEv.grosMichel, ...newEv.grosMichel],
+                space: [...oldEv.space, ...newEv.space],
+                business: [...oldEv.business, ...newEv.business],
+                bloodstone: [...oldEv.bloodstone, ...newEv.bloodstone],
+                parking: [...oldEv.parking, ...newEv.parking],
+                eightBall: [...oldEv.eightBall, ...newEv.eightBall],
+                glass: [...oldEv.glass, ...newEv.glass],
+                omenGlobe: [...oldEv.omenGlobe, ...newEv.omenGlobe],
+                theWheel: [...oldEv.theWheel, ...newEv.theWheel],
+                misprint: concatInt32(oldEv.misprint, newEv.misprint),
+              },
               streamStates: nextRes.streamStates,
             },
             shopByAnte: mergedShop,
@@ -1189,7 +1246,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
 
   const handleExportPoster = async () => {
     if (!analyzed || isExportingPng) return;
-    playChipHit(2);
+    playChipChime(2);
     setIsExportingPng(true);
     try {
       await exportSeedPosterPng({
@@ -1245,7 +1302,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
 
   const handleSaveCurrentFilter = () => {
     const cleanName = saveFilterName.trim() || `Custom Filter (${deck})`;
-    playChipHit(1);
+    playChipChime(1);
     const yamlText =
       editorMode === 'json'
         ? (() => {
@@ -1285,7 +1342,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     commitFilterUpdate((f) =>
       updateFilterDeckStake(f, nextDeck as MotelyDeckName, stake as MotelyStakeName)
     );
-    if (analyzed && activeTab === 'analyzer') {
+    if (analyzed) {
       analyzeSeedNow(analyzed.seed, nextDeck, stake);
     }
   };
@@ -1296,7 +1353,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     commitFilterUpdate((f) =>
       updateFilterDeckStake(f, deck as MotelyDeckName, nextStake as MotelyStakeName)
     );
-    if (analyzed && activeTab === 'analyzer') {
+    if (analyzed) {
       analyzeSeedNow(analyzed.seed, deck, nextStake);
     }
   };
@@ -1385,7 +1442,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       activeTokenRef.current = token;
 
       let firstSeedCaptured = false;
-      let hitCount = 0;
+      let matchCount = 0;
       const seen = new Set<string>();
       const riderCache = new Map<string, MotelyJamlyzerSeedResult>();
 
@@ -1421,7 +1478,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
           const s = scored.seed.toUpperCase();
           if (seen.has(s)) return;
           seen.add(s);
-          playChipHit(hitCount++);
+          playChipChime(matchCount++);
           const cachedRider = riderCache.get(s);
           setResults((prev) => {
             const next = [...prev, { seed: s, score: scored.score, rider: cachedRider }];
@@ -1437,7 +1494,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
           const s = seed.toUpperCase();
           if (seen.has(s)) return;
           seen.add(s);
-          playChipHit(hitCount++);
+          playChipChime(matchCount++);
           const cachedRider = riderCache.get(s);
           setResults((prev) => [...prev, { seed: s, score: 0, rider: cachedRider }]);
           if (!firstSeedCaptured && autoAnalyzeFirst) {
@@ -1478,15 +1535,17 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       const search = settings.start(token);
       activeSearchRef.current = search;
       await search.waitForCompletionAsync();
-      setProgress({
+      setProgress((prev) => ({
         seedsSearched: search.totalSeedsSearched,
         matchingSeeds: search.matchingSeeds,
         seedsPerMillisecond: search.seedsPerSecond / 1000,
-        percentComplete: 100,
+        percentComplete: token.isCancellationRequested ? (prev?.percentComplete ?? 0) : 100,
         elapsedMilliseconds: search.elapsedMs,
-      });
+      }));
     } catch (e) {
-      setSearchError(getMotelyError(e));
+      if (!activeTokenRef.current?.isCancellationRequested) {
+        setSearchError(getMotelyError(e));
+      }
     } finally {
       if (activeSearchRef.current) {
         try {
@@ -1516,14 +1575,16 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
           ...prev,
           { key, ante, location, name: decoded.name, edition: decoded.edition },
         ];
-        next.sort((a, b) => a.ante - b.ante || a.location.localeCompare(b.location));
+        next.sort(
+          (a, b) => a.ante - b.ante || a.location.localeCompare(b.location, undefined, { numeric: true })
+        );
         return next;
       });
     },
     []
   );
 
-  // OptimusPi/Blueprint-style Active Multi-Seed Queue (JAML seeds -> Search hits -> Vault)
+  // OptimusPi/Blueprint-style Active Multi-Seed Queue (JAML seeds -> Search results -> Vault)
   const activeSeedQueue = useMemo(() => {
     if (loadedJamlSeeds.length > 0) {
       return {
@@ -1597,11 +1658,11 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
   }, [activeTab, bootState, activeSeedQueue.seeds.length, stepMultiSeed, analyzed, analyzerMaxAnte]);
 
   // Blueprint-style Deep Find-in-Seed Spotlight across ALL loaded Antes (0..analyzerMaxAnte)
-  const spotlightHits = useMemo<SpotlightHit[]>(() => {
+  const spotlightMatches = useMemo<SpotlightMatch[]>(() => {
     const q = spotlightQuery.trim().toLowerCase();
     if (!analyzed || q.length < 2) return [];
-    const hits: SpotlightHit[] = [];
-    const MAX_HITS = 120;
+    const matches: SpotlightMatch[] = [];
+    const MAX_MATCHES = 120;
 
     // Build quick lookup from (ante, packSlot) -> Legendary Joker name for Soul cards in packs
     const soulLookup = new Map<string, string>();
@@ -1610,8 +1671,8 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       soulLookup.set(`${leg.ante}-${leg.packSlot}`, legName);
       const dec = decodeItem(leg.item);
       const soulHay = `soul the soul legendary ${legName} ${dec.edition ?? ''}`.toLowerCase();
-      if (soulHay.includes(q) && hits.length < MAX_HITS) {
-        hits.push({
+      if (soulHay.includes(q) && matches.length < MAX_MATCHES) {
+        matches.push({
           ante: leg.ante,
           subTab: 'shop',
           location: `Soul Pack #${leg.packSlot + 1}`,
@@ -1627,37 +1688,37 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       location: string,
       item: MotelyItem
     ) => {
-      if (hits.length >= MAX_HITS) return;
+      if (matches.length >= MAX_MATCHES) return;
       const info = decodeItem(item);
       const hay = `${info.name} ${info.rawName} ${info.category} ${info.edition ?? ''} ${
         info.seal ? `${info.seal} seal` : ''
       } ${info.enhancement ?? ''}`.toLowerCase();
       if (hay.includes(q)) {
-        hits.push({ ante, subTab, location, name: info.name, edition: info.edition });
+        matches.push({ ante, subTab, location, name: info.name, edition: info.edition });
       }
     };
 
     for (const a of analyzed.result.antes) {
-      if (hits.length >= MAX_HITS) break;
+      if (matches.length >= MAX_MATCHES) break;
 
       const bossName = decodeBossName(a.boss);
-      if (`boss ${bossName}`.toLowerCase().includes(q) && hits.length < MAX_HITS) {
-        hits.push({ ante: a.ante, subTab: 'map', location: 'Boss Blind', name: bossName, edition: null });
+      if (`boss ${bossName}`.toLowerCase().includes(q) && matches.length < MAX_MATCHES) {
+        matches.push({ ante: a.ante, subTab: 'map', location: 'Boss Blind', name: bossName, edition: null });
       }
 
       const voucherName = decodeVoucherName(a.voucher);
-      if (`voucher ${voucherName}`.toLowerCase().includes(q) && hits.length < MAX_HITS) {
-        hits.push({ ante: a.ante, subTab: 'map', location: 'Voucher', name: voucherName, edition: null });
+      if (`voucher ${voucherName}`.toLowerCase().includes(q) && matches.length < MAX_MATCHES) {
+        matches.push({ ante: a.ante, subTab: 'map', location: 'Voucher', name: voucherName, edition: null });
       }
 
       const smallTag = decodeTagName(a.smallBlindTag);
-      if (`tag small ${smallTag}`.toLowerCase().includes(q) && hits.length < MAX_HITS) {
-        hits.push({ ante: a.ante, subTab: 'map', location: 'Small Tag', name: smallTag, edition: null });
+      if (`tag small ${smallTag}`.toLowerCase().includes(q) && matches.length < MAX_MATCHES) {
+        matches.push({ ante: a.ante, subTab: 'map', location: 'Small Tag', name: smallTag, edition: null });
       }
 
       const bigTag = decodeTagName(a.bigBlindTag);
-      if (`tag big ${bigTag}`.toLowerCase().includes(q) && hits.length < MAX_HITS) {
-        hits.push({ ante: a.ante, subTab: 'map', location: 'Big Tag', name: bigTag, edition: null });
+      if (`tag big ${bigTag}`.toLowerCase().includes(q) && matches.length < MAX_MATCHES) {
+        matches.push({ ante: a.ante, subTab: 'map', location: 'Big Tag', name: bigTag, edition: null });
       }
 
       const shop = analyzed.shopByAnte[a.ante] ?? a.shopItems;
@@ -1679,14 +1740,21 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       a.pulls.uncommonTagJokers.forEach((it, i) =>
         checkItem(a.ante, 'pulls', `Uncommon Tag #${i + 1}`, it)
       );
+      a.pulls.riffRaffJokers.forEach((it, i) => checkItem(a.ante, 'pulls', `Riff-Raff #${i + 1}`, it));
       a.pulls.emperorTarots.forEach((it, i) => checkItem(a.ante, 'pulls', `Emperor #${i + 1}`, it));
-      a.pulls.highPriestessPlanets.forEach((it, i) =>
-        checkItem(a.ante, 'pulls', `High Priestess #${i + 1}`, it)
+      a.pulls.purpleSealTarots.forEach((it, i) =>
+        checkItem(a.ante, 'pulls', `Purple Seal / 8-Ball #${i + 1}`, it)
       );
+      a.pulls.sixthSenseSpectrals.forEach((it, i) =>
+        checkItem(a.ante, 'pulls', `Sixth Sense #${i + 1}`, it)
+      );
+      a.pulls.seanceSpectrals.forEach((it, i) => checkItem(a.ante, 'pulls', `Séance #${i + 1}`, it));
     }
 
-    hits.sort((a, b) => a.ante - b.ante || a.location.localeCompare(b.location));
-    return hits;
+    matches.sort(
+      (a, b) => a.ante - b.ante || a.location.localeCompare(b.location, undefined, { numeric: true })
+    );
+    return matches;
   }, [analyzed, spotlightQuery]);
 
   const currentAnteData = useMemo(() => {
@@ -1748,6 +1816,27 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     return 'menu';
   }, [isSearching, activeTab, analyzerSubTab]);
 
+  const soulsByAnte = useMemo(() => {
+    const map = new Map<number, string[]>();
+    if (!analyzed) return map;
+    for (const leg of analyzed.result.legendaryOrder) {
+      const list = map.get(leg.ante) ?? [];
+      list.push(decodeJokerEnumName(leg.joker));
+      map.set(leg.ante, list);
+    }
+    return map;
+  }, [analyzed]);
+
+  const activeModSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (simLuckKey !== 'X1') parts.push(`${simLuckKey.replace('X', '')}× Luck`);
+    if (simShowman) parts.push('Showman');
+    if (simLegendaries.length > 0) parts.push(`${simLegendaries.length} Soul${simLegendaries.length > 1 ? 's' : ''}`);
+    if (simVouchers.length > 0) parts.push(`${simVouchers.length} Voucher${simVouchers.length > 1 ? 's' : ''}`);
+    if (analyzerMaxAnte > 8) parts.push(`Endless A${analyzerMaxAnte}`);
+    return parts;
+  }, [simLuckKey, simShowman, simLegendaries.length, simVouchers.length, analyzerMaxAnte]);
+
   const renderRoutableCardRow = (
     title: string,
     items: readonly MotelyItem[],
@@ -1787,7 +1876,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
         <BalPanel variant="raised" className="relative z-10 flex flex-col items-center gap-3 px-6 py-5">
           <Loader2 size={34} className="animate-spin text-[#fe5f55]" />
           <div className="text-[22px] text-white tracking-wide [text-shadow:1px_1px_0_rgba(0,0,0,0.85)]">
-            Booting seedfinder.app · Motely WASM 32.0.3…
+            Booting seedfinder.app · Motely (NativeAOT-LLVM)…
           </div>
           <div className="text-[14px] text-[#b7c7ca]">
             Initializing deterministic Balatro seed engine
@@ -1827,9 +1916,15 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
   const speedPerSec = progress ? Math.round(progress.seedsPerMillisecond * 1000) : 0;
   const clauseItemOptions = JAML_CLAUSE_ITEMS[clauseKind];
 
+  const isRngView =
+    analyzerSubTab === 'pulls' || analyzerSubTab === 'streams' || analyzerSubTab === 'events';
+  const topExplorerView: 'shop' | 'map' | 'guide' | 'card' | 'rng' = isRngView
+    ? 'rng'
+    : analyzerSubTab;
+
   return (
     <div
-      className="relative h-full w-full max-w-full flex flex-col bg-[#182426] text-white overflow-hidden"
+      className="relative h-full w-full max-w-full flex flex-col bg-[#162022] text-white overflow-hidden"
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes('Files')) {
           e.preventDefault();
@@ -1855,20 +1950,20 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     >
       {/* Full-Window Drag & Drop .jaml Overlay */}
       {isDragOverJaml && (
-        <div className="pointer-events-none fixed inset-0 z-[7000] flex items-center justify-center bg-[#182426]/85 backdrop-blur-sm p-6">
-          <div className="rounded-[12px] border-[3px] border-dashed border-[#f5b841] bg-[#223033] px-8 py-6 text-center shadow-[0_8px_0_rgba(0,0,0,0.6)]">
-            <FileUp size={36} className="mx-auto mb-2 text-[#f5b841]" />
+        <div className="pointer-events-none fixed inset-0 z-[7000] flex items-center justify-center bg-[#162022]/85 backdrop-blur-sm p-6">
+          <div className="rounded-[12px] border-[3px] border-dashed border-[var(--j-gold)] bg-[#223033] px-8 py-6 text-center shadow-[0_8px_0_rgba(0,0,0,0.6)]">
+            <FileUp size={36} className="mx-auto mb-2 text-[var(--j-gold)]" />
             <div className="text-[22px] text-white [text-shadow:1px_1px_0_rgba(0,0,0,0.85)]">
               Drop .jaml / .yaml / .json File
             </div>
-            <div className="text-[14px] text-[#b7c7ca] mt-1">
-              Auto-converts format &amp; loads all embedded seeds into Analyzer
+            <div className="text-[14px] text-[var(--j-text-muted)] mt-1">
+              Loads filter rules &amp; embedded seeds straight into the table
             </div>
           </div>
         </div>
       )}
 
-      {/* Hidden .jaml / .yaml / .json File Picker */}
+      {/* Hidden .jaml File Picker */}
       <input
         ref={jamlFileInputRef}
         type="file"
@@ -1877,879 +1972,93 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
         onChange={handleJamlFileSelected}
       />
 
-      {/* CLEAN 3-ZONE TOP BAR (Mobile-first grid, never overflows horizontally) */}
-      <header className="relative z-30 flex flex-wrap items-center justify-between gap-2 sm:gap-4 border-b-[3px] border-[#6f7987] bg-[#1b282b] px-2.5 sm:px-4 py-2 shrink-0 w-full">
-        {/* Zone 1: Brand Wordmark */}
-        <div className="text-[20px] sm:text-[24px] leading-none tracking-wide text-white whitespace-nowrap shrink-0 [text-shadow:2px_2px_0_rgba(0,0,0,0.85)]">
-          seedfinder<span className="text-[#fe5f55]">.app</span>
+      {/* CLEAN SINGLE-ROW 3-ZONE TOP BAR (powered by jaml-ui Tabs) */}
+      <header className="relative z-30 flex items-center justify-between gap-4 border-b-2 border-white/10 bg-[#182426]/95 px-4 py-2 shrink-0">
+        {/* Zone 1: Wordmark */}
+        <div className="text-[22px] leading-none tracking-wide text-white whitespace-nowrap shrink-0 [text-shadow:2px_2px_0_rgba(0,0,0,0.85)]">
+          seedfinder<span className="text-[var(--j-red)]">.app</span>
         </div>
 
-        {/* Zone 2: Primary Workspace Tabs (3-col grid on iPhone, inline on sm+) */}
-        <nav className="order-3 sm:order-2 w-full sm:w-auto min-w-0">
+        {/* Zone 2: Primary Workspace Tabs with authentic jaml-ui bouncing arrow */}
+        <nav aria-label="Workspace" className="min-w-0">
           <BalTabs<WorkspaceTab>
             tone="red"
             size="sm"
+            compact
             value={activeTab}
             onChange={(val) => {
               playCardClick(1.05);
               setActiveTab(val);
             }}
             tabs={[
-              { value: 'search', label: `Search (${results.length})` },
               {
                 value: 'analyzer',
-                label: `Analyzer${analyzed ? ` · ${analyzed.seed}` : ''}`,
+                label: analyzed ? `Explorer · ${analyzed.seed}` : 'Explorer',
               },
-              { value: 'vault', label: `Vault (${savedSeeds.length})` },
+              {
+                value: 'search',
+                label: results.length > 0 ? `Search Party (${results.length})` : 'Search Party',
+              },
+              {
+                value: 'vault',
+                label: savedSeeds.length > 0 ? `Vault (${savedSeeds.length})` : 'Vault',
+              },
             ]}
           />
         </nav>
 
-        {/* Zone 3: Quick .jaml / OS / Wee Joker Controls */}
-        <div className="flex items-center gap-1.5 shrink-0 order-2 sm:order-3">
+        {/* Zone 3: Quiet Utility Controls */}
+        <div className="flex items-center gap-2 shrink-0">
           <BalButton
-            tone="orange"
+            tone="slate"
             size="xs"
             title="Import .jaml, .yaml, or .json file"
             onClick={() => jamlFileInputRef.current?.click()}
           >
             <FileUp size={13} />
-            <span>.jaml</span>
+            <span className="hidden sm:inline">Import</span>
           </BalButton>
           {onOpenWeeJoker && (
             <BalButton tone="green" size="xs" onClick={onOpenWeeJoker}>
               <Gamepad2 size={13} />
-              <span className="hidden sm:inline">Wee Joker</span>
+              <span className="hidden md:inline">Wee Joker</span>
             </BalButton>
           )}
           {onToggleDesktop && (
             <BalButton tone="slate" size="xs" onClick={onToggleDesktop}>
               {isFullscreen ? <Monitor size={13} /> : <Maximize2 size={13} />}
-              <span className="hidden sm:inline">{isFullscreen ? 'Balatro OS' : 'Fullscreen'}</span>
+              <span className="hidden md:inline">{isFullscreen ? 'Desktop' : 'Full'}</span>
             </BalButton>
           )}
         </div>
       </header>
 
-      {/* MOBILE COMPACT CONTROLS BAR (< md) */}
-      <div className="md:hidden relative z-30 flex items-center justify-between gap-2 border-b-2 border-[#4f6367] bg-[#223033] px-3 py-1.5 shrink-0">
-        <BalButton
-          tone={mobileControlsOpen ? 'orange' : 'slate'}
-          size="xs"
-          onClick={() => {
-            playCardClick(1.05);
-            setMobileControlsOpen((v) => !v);
-          }}
-        >
-          <SlidersHorizontal size={13} />
-          <span>Controls ({deck})</span>
-        </BalButton>
-
-        <span className="text-[12px] text-[#b7c7ca] tabular-nums truncate">
-          {isSearching
-            ? `${speedPerSec.toLocaleString()}/s`
-            : `${results.length}/${maxMatches} hits`}
-        </span>
-
-        {!isSearching ? (
-          <BalButton
-            tone="green"
-            size="xs"
-            disabled={Boolean(validationError)}
-            disabledReason={validationError ?? undefined}
-            onClick={startSearch}
-          >
-            <Play size={12} fill="currentColor" />
-            <span>Search</span>
-          </BalButton>
-        ) : (
-          <BalButton tone="red" size="xs" onClick={stopSearch}>
-            <Square size={11} fill="currentColor" />
-            <span>Stop</span>
-          </BalButton>
-        )}
-      </div>
-
+      {/* LIVE STAGE WITH REAL jaml-ui WebGL BALATRO BACKDROP */}
       <div className="relative flex-1 min-h-0 flex overflow-hidden">
-        {/* Mobile Backdrop for Controls Drawer */}
-        {mobileControlsOpen && (
-          <div
-            aria-hidden="true"
-            onClick={() => setMobileControlsOpen(false)}
-            className="md:hidden absolute inset-0 z-20 bg-black/60"
-          />
-        )}
+        <BalatroBackdrop
+          preset={backdropPreset}
+          reducedMotion={reducedMotion}
+          pixelFilter={260}
+          speed={isSearching ? 1.4 : 0.65}
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-[1] bg-[#121d1f]/68"
+        />
 
-        {/* LEFT BALATRO SCOREBOARD / CONTROL RAIL (Drawer on mobile, fixed rail on md+) */}
-        <aside
-          className={`${
-            mobileControlsOpen
-              ? 'flex absolute inset-y-0 left-0 z-30 w-[min(300px,88vw)]'
-              : 'hidden'
-          } md:flex md:static md:z-20 md:w-[270px] lg:w-[290px] shrink-0 h-full overflow-y-auto p-3 flex-col gap-3 border-r-[3px] border-[#6f7987] bg-[#1b282b] md:bg-[#1b282b]/95 shadow-[4px_0_16px_rgba(0,0,0,0.45)]`}
-        >
-          <div className="md:hidden flex items-center justify-between pb-1 border-b border-white/10">
-            <span className="text-[14px] uppercase tracking-wider text-[#f5b841]">
-              Run Controls
-            </span>
-            <BalButton tone="slate" size="xs" onClick={() => setMobileControlsOpen(false)}>
-              <X size={13} />
-              <span>Done</span>
-            </BalButton>
-          </div>
-          {/* Iconic Balatro Blue Chips × Red Mult Readout */}
-          <BalChipCounter
-            leftLabel="Seeds"
-            leftValue={searchedCount.toLocaleString()}
-            rightLabel="Seeds/s"
-            rightValue={speedPerSec.toLocaleString()}
-            footerLeft={isSearching ? 'Scanning WASM…' : 'Motely Engine Ready'}
-            footerRight={`Matches ${results.length} / ${maxMatches}`}
-          />
-
-          {/* Primary Search CTA */}
-          <div>
-            {!isSearching ? (
-              <BalButton
-                tone="green"
-                size="md"
-                block
-                disabled={Boolean(validationError)}
-                disabledReason={validationError ?? undefined}
-                onClick={startSearch}
-              >
-                <Play size={15} fill="currentColor" />
-                <span>{searchMode === 'seedlist' ? 'Test Seed List' : 'Start Search'}</span>
-              </BalButton>
-            ) : (
-              <BalButton tone="red" size="md" block onClick={stopSearch}>
-                <Square size={14} fill="currentColor" />
-                <span>Stop Search</span>
-              </BalButton>
-            )}
-          </div>
-
-          {/* Preset & Run Config */}
-          <BalPanel title="Run Setup" className="flex flex-col gap-3">
-            <BalSelect
-              label="Filter Preset"
-              items={PRESET_SELECT_ITEMS}
-              value={presetId}
-              onChange={handlePresetChange}
-            />
-
-            <BalCycle
-              label="Deck"
-              options={DECK_CYCLE_OPTIONS}
-              value={deck}
-              onChange={handleDeckChange}
-              tone="blue"
-              pips={false}
-            />
-
-            <BalCycle
-              label="Stake"
-              options={STAKE_CYCLE_OPTIONS}
-              value={stake}
-              onChange={handleStakeChange}
-              tone="red"
-              pips
-            />
-          </BalPanel>
-
-          {/* Search Strategy */}
-          <BalPanel title="Search Strategy" className="flex flex-col gap-3">
-            <BalSelect
-              label="Mode"
-              items={SEARCH_MODE_ITEMS}
-              value={searchMode}
-              onChange={(v) => {
-                playCardClick();
-                setSearchMode(v);
-              }}
-            />
-
-            {searchMode === 'aesthetic' && (
-              <BalSelect
-                label="Aesthetic Pattern"
-                items={AESTHETIC_ITEMS}
-                value={aestheticName}
-                onChange={setAestheticName}
-              />
-            )}
-
-            {searchMode === 'keyword' && (
-              <BalInput
-                label="Keywords (comma-separated)"
-                mono
-                value={keywordsText}
-                onChange={(e) => setKeywordsText(e.target.value)}
-                placeholder="JIMBO, PERKEO, WEE"
-              />
-            )}
-
-            {searchMode === 'seedlist' && (
-              <BalTextArea
-                label="Seeds to Test"
-                rows={3}
-                value={seedListText}
-                onChange={(e) => setSeedListText(e.target.value.toUpperCase())}
-                placeholder="ALEEB, 2K9H9HN, 7LB2WVPK"
-              />
-            )}
-
-            <BalSlider
-              label="Stop After Matches"
-              tone="orange"
-              min={1}
-              max={25}
-              step={1}
-              value={maxMatches}
-              onChange={setMaxMatches}
-            />
-
-            <BalSwitch
-              label="Auto-inspect first hit"
-              tone="green"
-              checked={autoAnalyzeFirst}
-              onChange={setAutoAnalyzeFirst}
-            />
-
-            <BalSwitch
-              label="Balatro sound FX"
-              tone="blue"
-              checked={sfxOn}
-              onChange={setSfxOn}
-            />
-
-            <BalSwitch
-              label="Reduce shader motion"
-              tone="purple"
-              checked={reducedMotion}
-              onChange={setReducedMotion}
-            />
-          </BalPanel>
-
-          <BalButton
-            tone="purple"
-            size="sm"
-            block
-            onClick={() => {
-              playCardClick(1.08);
-              setGuideOpen(true);
-            }}
-          >
-            <HelpCircle size={15} />
-            <span>JAML Reference</span>
-          </BalButton>
-        </aside>
-
-        {/* RIGHT STAGE WITH LIVE BALATRO SHADER BACKDROP */}
-        <main className="relative flex-1 min-w-0 h-full flex flex-col overflow-hidden">
-          <BalatroBackdrop
-            preset={backdropPreset}
-            reducedMotion={reducedMotion}
-            pixelFilter={240}
-            speed={isSearching ? 1.55 : 0.85}
-          />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-[1] bg-[#142022]/55"
-          />
-
-          <div className="relative z-10 flex flex-col h-full min-h-0 w-full max-w-full p-2 sm:p-3 gap-3 overflow-y-auto overflow-x-hidden">
-            {/* TAB 1: TYPED VISUAL CLAUSE STUDIO + SCHEMA-AWARE MONACO IDE + LIVE RIDER RESULTS */}
-            {activeTab === 'search' && (
-              <div className="flex flex-col gap-3 w-full max-w-[1160px] mx-auto min-w-0">
-                {/* Studio Toolbar: Clean Mobile Grids (zero wide flex overflow!) */}
-                <BalPanel className="flex flex-col gap-2.5 bg-[#36494d]/95">
-                  {/* View Switcher Row: 3-col grid on iPhone */}
-                  <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-1.5">
-                    <BalButton
-                      tone={editorLayout === 'visual' ? 'orange' : 'slate'}
-                      size="xs"
-                      block={false}
-                      className="w-full sm:w-auto"
-                      active={editorLayout === 'visual'}
-                      onClick={() => setEditorLayout('visual')}
-                    >
-                      <LayoutGrid size={13} />
-                      <span>Visual</span>
-                    </BalButton>
-                    <BalButton
-                      tone={editorLayout === 'code' ? 'orange' : 'slate'}
-                      size="xs"
-                      block={false}
-                      className="w-full sm:w-auto"
-                      active={editorLayout === 'code'}
-                      onClick={() => setEditorLayout('code')}
-                    >
-                      <Code2 size={13} />
-                      <span>Code</span>
-                    </BalButton>
-                    <BalButton
-                      tone={editorLayout === 'split' ? 'orange' : 'slate'}
-                      size="xs"
-                      block={false}
-                      className="w-full sm:w-auto"
-                      active={editorLayout === 'split'}
-                      onClick={() => setEditorLayout('split')}
-                    >
-                      <Columns2 size={13} />
-                      <span>Split</span>
-                    </BalButton>
-                  </div>
-
-                  {/* .jaml Import / Export / Convert / Save Grid */}
-                  <div className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-1.5">
-                    <BalButton
-                      tone="purple"
-                      size="xs"
-                      className="w-full sm:w-auto"
-                      onClick={() => jamlFileInputRef.current?.click()}
-                    >
-                      <FileUp size={12} />
-                      <span>Import .jaml</span>
-                    </BalButton>
-                    <BalButton
-                      tone="slate"
-                      size="xs"
-                      className="w-full sm:w-auto"
-                      onClick={handleExportJamlFile}
-                    >
-                      <Download size={12} />
-                      <span>Export .jaml</span>
-                    </BalButton>
-                    <BalButton
-                      tone="blue"
-                      size="xs"
-                      className="w-full sm:w-auto"
-                      onClick={handleToggleFormat}
-                      disabled={Boolean(validationError)}
-                      disabledReason={validationError ?? undefined}
-                    >
-                      {editorMode === 'yaml' ? '→ JSON' : '→ YAML'}
-                    </BalButton>
-                  </div>
-
-                  {/* Save Filter Name + Button Row */}
-                  <div className="grid grid-cols-[1fr_auto] gap-1.5">
-                    <input
-                      type="text"
-                      value={saveFilterName}
-                      onChange={(e) => setSaveFilterName(e.target.value)}
-                      placeholder="Save filter name to Vault…"
-                      className="w-full min-w-0 rounded-[5px] border border-[#4f6367] bg-[#182426] px-2.5 py-1.5 text-[13px] text-white placeholder:text-[#6f8387] focus:outline-none focus:border-[#f5b841]"
-                    />
-                    <BalButton tone="gold" size="xs" onClick={handleSaveCurrentFilter}>
-                      <Save size={12} />
-                      <span>Save</span>
-                    </BalButton>
-                  </div>
-
-                  {/* Embedded Seeds Shortcut Banner (if current .jaml has a seeds: list) */}
-                  {embeddedJamlSeeds.length > 0 && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-[6px] border border-[#4bc292] bg-[#173c2f]/80 px-2.5 py-1.5">
-                      <span className="text-[12px] text-[#9ff2cf]">
-                        Found <strong>{embeddedJamlSeeds.length}</strong> seed
-                        {embeddedJamlSeeds.length > 1 ? 's' : ''} in this .jaml file
-                      </span>
-                      <BalButton tone="green" size="xs" onClick={handleOpenEmbeddedSeedsInAnalyzer}>
-                        <MapIcon size={12} />
-                        <span>Open All in Analyzer</span>
-                      </BalButton>
-                    </div>
-                  )}
-
-                  {/* Quick-Add One-Click Cards (Clean 2-col grid on iPhone, wrap on desktop) */}
-                  <div className="pt-1.5 border-t border-white/10">
-                    <div className="text-[11px] uppercase tracking-wider text-[#b7c7ca] mb-1.5">
-                      Quick Add Rule
-                    </div>
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5">
-                      {QUICK_CLAUSES.map((clause) => (
-                        <BalButton
-                          key={clause.label}
-                          tone={clause.tone}
-                          size="xs"
-                          className="w-full sm:w-auto"
-                          onClick={() => handleQuickAdd(clause)}
-                        >
-                          {clause.label}
-                        </BalButton>
-                      ))}
-                    </div>
-                  </div>
-                </BalPanel>
-
-                {/* Split / Visual / Code Workspace */}
-                <div
-                  className={`grid gap-3 ${
-                    editorLayout === 'split' ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'
-                  }`}
-                >
-                  {/* LEFT HALF: TYPED VISUAL CLAUSE DECK + BUILDER */}
-                  {editorLayout !== 'code' && (
-                    <BalPanel
-                      title={`Visual Filter Cards (${clauseCards.length})`}
-                      rightSlot={
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <BalButton
-                            tone="blue"
-                            size="xs"
-                            title="Remove duplicates, sort antes, strip empty fields & format JAML"
-                            disabled={Boolean(validationError)}
-                            disabledReason={validationError ?? undefined}
-                            onClick={handleCleanupFilter}
-                          >
-                            <Eraser size={12} />
-                            <span>Clean &amp; Dedupe</span>
-                          </BalButton>
-                          {clauseCards.length > 0 && (
-                            <BalButton
-                              tone="red"
-                              size="xs"
-                              title="Clear all filter clauses"
-                              onClick={handleClearAllClauses}
-                            >
-                              <Trash2 size={12} />
-                              <span>Clear All</span>
-                            </BalButton>
-                          )}
-                        </div>
-                      }
-                      className="flex flex-col gap-3 bg-[#36494d]/95"
-                    >
-                      {cleanupNotice && (
-                        <div className="rounded-[6px] border border-[#4bc292] bg-[#4bc292]/15 px-2.5 py-1 text-[12px] text-[#7be0b4]">
-                          {cleanupNotice}
-                        </div>
-                      )}
-
-                      {/* Active Typed Clause Cards */}
-                      {clauseCards.length === 0 ? (
-                        <div className="rounded-[6px] border-2 border-dashed border-[#5c7277] p-4 text-center text-[14px] text-[#b7c7ca]">
-                          No clauses yet. Add a card below or click a Quick Add button.
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-2">
-                          {clauseCards.map((item) => (
-                            <ClauseDeckCard
-                              key={`${item.section}-${item.index}-${item.primaryKey}-${item.targetText}`}
-                              item={item}
-                              onRemove={() => {
-                                playCardClick(0.8);
-                                commitFilterUpdate((f) =>
-                                  removeClauseFromFilter(f, item.section, item.index)
-                                );
-                              }}
-                              onDuplicate={() => {
-                                playCardClick(1.1);
-                                commitFilterUpdate((f) =>
-                                  duplicateClauseInFilter(f, item.section, item.index)
-                                );
-                              }}
-                              onMoveSection={(nextSec) => {
-                                playCardClick(1.15);
-                                commitFilterUpdate((f) =>
-                                  moveClauseBetweenSections(f, item.section, item.index, nextSec)
-                                );
-                              }}
-                              onUpdate={(nextSec, nextClause) => {
-                                commitFilterUpdate((f) =>
-                                  updateClauseInFilter(
-                                    f,
-                                    item.section,
-                                    item.index,
-                                    nextSec,
-                                    nextClause
-                                  )
-                                );
-                              }}
-                            />
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Typed Clause Composer (1-col on iPhone so every select is easy to edit!) */}
-                      <div className="rounded-[6px] border-2 border-[#162022] bg-[#223033] p-2.5 flex flex-col gap-2.5">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <BalSelect<ClauseSection>
-                            label="Rule"
-                            items={CLAUSE_SECTION_ITEMS}
-                            value={clauseSection}
-                            onChange={setClauseSection}
-                          />
-                          <BalSelect<ClauseKind>
-                            label="Category"
-                            items={CLAUSE_KIND_ITEMS}
-                            value={clauseKind}
-                            onChange={(nextKind) => {
-                              setClauseKind(nextKind);
-                              setClauseItem(JAML_CLAUSE_ITEMS[nextKind][0].value);
-                            }}
-                          />
-                          <BalSelect
-                            label="Target"
-                            items={clauseItemOptions}
-                            value={clauseItem}
-                            onChange={setClauseItem}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 items-end">
-                          {clauseKind === 'erraticRank' ? (
-                            <BalSlider
-                              label="Min in Deck"
-                              tone="gold"
-                              min={6}
-                              max={16}
-                              value={Math.max(6, Math.min(16, clauseWeight))}
-                              onChange={setClauseWeight}
-                            />
-                          ) : (
-                            <BalSelect
-                              label="Antes"
-                              items={ANTE_RANGE_PRESETS.map((p) => ({
-                                value: p.value,
-                                label: p.label,
-                              }))}
-                              value={clauseAnteKey}
-                              onChange={setClauseAnteKey}
-                            />
-                          )}
-
-                          {(clauseKind === 'joker' ||
-                            clauseKind === 'legendaryJoker' ||
-                            clauseKind === 'rareJoker') && (
-                            <BalSelect
-                              label="Edition"
-                              items={EDITION_ITEMS}
-                              value={clauseEdition}
-                              onChange={setClauseEdition}
-                            />
-                          )}
-
-                          {(clauseKind === 'joker' ||
-                            clauseKind === 'rareJoker' ||
-                            clauseKind === 'legendaryJoker' ||
-                            clauseKind === 'tarotCard' ||
-                            clauseKind === 'spectralCard') && (
-                            <BalSelect<SourcePresetKey>
-                              label="Source"
-                              items={SOURCE_PRESET_ITEMS}
-                              value={clauseSourceKey}
-                              onChange={setClauseSourceKey}
-                            />
-                          )}
-
-                          {clauseSection === 'should' && clauseKind !== 'erraticRank' && (
-                            <BalSlider
-                              label="Score Weight"
-                              tone="gold"
-                              min={1}
-                              max={25}
-                              value={clauseWeight}
-                              onChange={setClauseWeight}
-                            />
-                          )}
-
-                          <div className="sm:col-span-2 md:col-span-1">
-                            <BalButton tone="green" size="sm" block onClick={handleInsertComposedClause}>
-                              <Plus size={14} />
-                              <span>Add Rule</span>
-                            </BalButton>
-                          </div>
-                        </div>
-                      </div>
-                    </BalPanel>
-                  )}
-
-                  {/* RIGHT HALF: LAZY MONACO IDE / FAST MOBILE CODE EDITOR */}
-                  {editorLayout !== 'visual' && (
-                    <BalPanel
-                      title={
-                        editorMode === 'yaml'
-                          ? 'JAML Code (YAML)'
-                          : 'JAML Code (JSON)'
-                      }
-                      rightSlot={
-                        <div className="flex items-center gap-1.5">
-                          <BalButton
-                            tone={useMonacoOnMobile ? 'blue' : 'slate'}
-                            size="xs"
-                            onClick={() => setUseMonacoOnMobile((v) => !v)}
-                          >
-                            {useMonacoOnMobile ? 'Plain Editor' : 'Monaco IDE'}
-                          </BalButton>
-                        </div>
-                      }
-                      className="flex flex-col gap-2 bg-[#36494d]/95"
-                    >
-                      {useMonacoOnMobile ? (
-                        <Suspense
-                          fallback={
-                            <div className="flex items-center justify-center gap-2 rounded-[6px] border-2 border-[#4f6367] bg-[#151f21] h-[310px] text-[14px] text-[#b7c7ca]">
-                              <Loader2 size={16} className="animate-spin text-[#f5b841]" />
-                              <span>Loading Monaco JAML IDE…</span>
-                            </div>
-                          }
-                        >
-                          <LazyJamlMonacoEditor
-                            value={jaml}
-                            language={editorMode}
-                            error={validationError}
-                            height={editorLayout === 'code' ? 380 : 310}
-                            onChange={setJaml}
-                          />
-                        </Suspense>
-                      ) : (
-                        <BalTextArea
-                          aria-label="JAML Filter Code"
-                          rows={12}
-                          spellCheck={false}
-                          autoCapitalize="off"
-                          autoCorrect="off"
-                          value={jaml}
-                          onChange={(e) => setJaml(e.target.value)}
-                          error={null}
-                        />
-                      )}
-
-                      {validationError ? (
-                        <div className="rounded-[6px] border border-[#fe5f55] bg-[#fe5f55]/20 px-3 py-1.5 text-[13px] text-white">
-                          {validationError}
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between text-[13px] text-[#7be0b4]">
-                          <span>Valid JamlFilter · Schema &amp; Motely WASM synced</span>
-                          <span className="text-[#b7c7ca]">
-                            {deck} · {stake}
-                          </span>
-                        </div>
-                      )}
-
-                      {searchError && (
-                        <div className="rounded-[6px] border border-[#fe5f55] bg-[#fe5f55]/25 px-3 py-1.5 text-[13px] text-white">
-                          Search error: {searchError}
-                        </div>
-                      )}
-                    </BalPanel>
-                  )}
-                </div>
-
-                {/* LIVE RIDER MATCHED SEEDS */}
-                <BalPanel
-                  title={`Matched Seeds (${results.length})`}
-                  rightSlot={
-                    <span className="text-[12px] text-[#c7dcd3]">
-                      Live Ante 1 card previews via MotelyJamlyzer Rider
-                    </span>
-                  }
-                  variant="felt"
-                  className="flex flex-col gap-2.5 min-h-[200px]"
-                >
-                  {results.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-8 text-center text-[#c7dcd3] gap-2">
-                      <Search size={28} className="opacity-70" />
-                      <div className="text-[17px] [text-shadow:1px_1px_0_rgba(0,0,0,0.75)]">
-                        {isSearching
-                          ? 'Scanning Balatro seeds in Motely WASM…'
-                          : 'Press Start Search to hunt matching seeds with live Ante 1 sprite previews.'}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-2.5">
-                      {results.map((hit) => {
-                        const ante1 = hit.rider?.antes.find((a) => a.ante === 1);
-                        const previewShop = ante1 ? ante1.shopItems.slice(0, 4) : [];
-                        const legendaries = hit.rider?.legendaryOrder.slice(0, 3) ?? [];
-                        const saved = isSeedSaved(hit.seed, deck);
-
-                        return (
-                          <div
-                            key={hit.seed}
-                            className="flex flex-col gap-2 rounded-[8px] border-2 border-[#162022] bg-[#223033]/95 p-2.5 shadow-[0_3px_0_rgba(0,0,0,0.5)]"
-                          >
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="font-mono text-[18px] font-semibold tracking-widest text-white truncate">
-                                  {hit.seed}
-                                </span>
-                                {hit.score > 0 && (
-                                  <span className="text-[13px] text-[#f5b841] tabular-nums">
-                                    +{hit.score} pts
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="grid grid-cols-4 sm:flex items-center gap-1.5 shrink-0">
-                                <BalButton
-                                  tone={saved ? 'gold' : 'slate'}
-                                  size="xs"
-                                  aria-label={saved ? 'Remove from Vault' : 'Save to Vault'}
-                                  onClick={() =>
-                                    toggleBookmarkSeed(hit.seed, deck, stake, hit.score, hit.rider)
-                                  }
-                                >
-                                  {saved ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}
-                                </BalButton>
-                                <BalButton
-                                  tone="green"
-                                  size="xs"
-                                  onClick={() => {
-                                    playCardClick(1.12);
-                                    analyzeSeedNow(hit.seed, deck, stake, undefined, true);
-                                    setAnalyzerSubTab('map');
-                                    setActiveTab('analyzer');
-                                  }}
-                                >
-                                  Map
-                                </BalButton>
-                                <BalButton
-                                  tone="purple"
-                                  size="xs"
-                                  onClick={() => {
-                                    playCardClick(1.15);
-                                    analyzeSeedNow(hit.seed, deck, stake, undefined, true);
-                                    setAnalyzerSubTab('card');
-                                    setActiveTab('analyzer');
-                                  }}
-                                >
-                                  Card
-                                </BalButton>
-                                <BalButton
-                                  tone={copiedKey === hit.seed ? 'green' : 'orange'}
-                                  size="xs"
-                                  aria-label={`Copy ${hit.seed}`}
-                                  onClick={() => copyWithFeedback(hit.seed, hit.seed)}
-                                >
-                                  {copiedKey === hit.seed ? <Check size={13} /> : <Copy size={13} />}
-                                </BalButton>
-                              </div>
-                            </div>
-
-                            {ante1 && (
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-[#b7c7ca]">
-                                <span>
-                                  Boss:{' '}
-                                  <strong className="text-[#fe5f55] font-normal">
-                                    {decodeBossName(ante1.boss)}
-                                  </strong>
-                                </span>
-                                <span>
-                                  Voucher:{' '}
-                                  <strong className="text-[#f5b841] font-normal">
-                                    {decodeVoucherName(ante1.voucher)}
-                                  </strong>
-                                </span>
-                                {legendaries.length > 0 && (
-                                  <span className="text-[#c8a6f5]">
-                                    Souls:{' '}
-                                    {legendaries
-                                      .map((l) => `${decodeJokerEnumName(l.joker)} (A${l.ante})`)
-                                      .join(', ')}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {previewShop.length > 0 && (
-                              <div className="flex flex-wrap gap-2 pt-1 border-t border-white/10">
-                                {previewShop.map((item, idx) => (
-                                  <BalCard
-                                    key={`${hit.seed}-p-${idx}`}
-                                    item={item}
-                                    index={idx}
-                                    width={48}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </BalPanel>
-              </div>
-            )}
-
-            {/* TAB 2: MOBILE-FIRST JAML MAP + SEED ANALYZER + FIND-IN-SEED + CLICK-TO-ROUTE + VERCEL OG */}
-            {activeTab === 'analyzer' && (
-              <div className="flex flex-col gap-3 w-full max-w-[1160px] mx-auto min-w-0">
-                {/* OptimusPi/Blueprint Multi-Seed Flyer Bar (← / → Arrow Keys across .jaml / Search / Vault!) */}
-                {activeSeedQueue.seeds.length > 0 && (
-                  <BalPanel
-                    title={`${activeSeedQueue.label} (${
-                      Math.max(1, activeSeedQueue.seeds.indexOf(analyzed?.seed ?? '') + 1)
-                    }/${activeSeedQueue.seeds.length})`}
-                    rightSlot={
-                      <div className="flex items-center gap-1">
-                        <span className="hidden sm:inline text-[11px] text-[#9ff2cf] mr-1">
-                          ← / → seeds · [ / ] ante
-                        </span>
-                        <BalButton
-                          tone="slate"
-                          size="xs"
-                          aria-label="Previous seed (ArrowLeft)"
-                          onClick={() => stepMultiSeed(-1)}
-                        >
-                          <ChevronLeft size={13} />
-                        </BalButton>
-                        <BalButton
-                          tone="slate"
-                          size="xs"
-                          aria-label="Next seed (ArrowRight)"
-                          onClick={() => stepMultiSeed(1)}
-                        >
-                          <ChevronRight size={13} />
-                        </BalButton>
-                        {activeSeedQueue.isCustomLoaded && (
-                          <BalButton
-                            tone="red"
-                            size="xs"
-                            aria-label="Clear loaded multi-seed queue"
-                            onClick={() => {
-                              setLoadedJamlSeeds([]);
-                              setLoadedJamlName(null);
-                            }}
-                          >
-                            <X size={12} />
-                          </BalButton>
-                        )}
-                      </div>
-                    }
-                    className="bg-[#1f3430]/95"
-                  >
-                    <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5">
-                      {activeSeedQueue.seeds.map((s) => {
-                        const isCur = analyzed?.seed === s;
-                        return (
-                          <BalButton
-                            key={s}
-                            tone={isCur ? 'gold' : 'slate'}
-                            size="xs"
-                            active={isCur}
-                            className="w-full sm:w-auto font-mono"
-                            onClick={() => {
-                              playCardClick(1.1);
-                              analyzeSeedNow(s, deck, stake, undefined, true);
-                            }}
-                          >
-                            {s}
-                          </BalButton>
-                        );
-                      })}
-                    </div>
-                  </BalPanel>
-                )}
-
-                {/* Seed Lookup + Endless Ante Range (1-39!) + Blueprint Deep Search */}
-                <BalPanel className="flex flex-col gap-2.5 bg-[#36494d]/95">
-                  <div className="grid grid-cols-[1fr_auto] sm:grid-cols-[200px_auto_1fr] gap-2 items-end">
+        {/* ================================================================
+         * VIEW 1: BLUEPRINT-INSPIRED SEED EXPLORER (Master-Detail Table)
+         * ================================================================ */}
+        {activeTab === 'analyzer' && (
+          <div className="relative z-10 flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+            {/* LEFT RAIL: Seed Lookup + Deck/Stake + Ante Timeline */}
+            <aside className="lg:w-[276px] xl:w-[292px] shrink-0 flex flex-col border-b lg:border-b-0 lg:border-r border-white/10 bg-[#182426]/88 backdrop-blur-sm overflow-hidden">
+              {/* Compact Seed + Run Header */}
+              <div className="p-3.5 flex flex-col gap-2.5 border-b border-white/10">
+                <div className="flex items-end gap-1.5">
+                  <div className="flex-1 min-w-0">
                     <BalInput
-                      label="Seed (or paste comma list)"
+                      label="Seed"
                       mono
                       value={seedInput}
                       onChange={(e) => setSeedInput(e.target.value.toUpperCase())}
@@ -2759,104 +2068,228 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                           analyzeSeedNow(seedInput, deck, stake, undefined, true);
                         }
                       }}
-                      placeholder="ALEEB or ALEEB, 2K9H9HN"
+                      placeholder="ALEEB"
                       error={analyzerError}
                     />
-                    <BalButton
-                      tone="green"
-                      size="md"
-                      onClick={() => {
-                        playRerollSweep();
-                        analyzeSeedNow(seedInput, deck, stake, undefined, true);
-                      }}
-                    >
-                      <Sparkles size={15} />
-                      <span>Go</span>
-                    </BalButton>
-
-                    {/* Blueprint-style Deep Find-in-Seed Spotlight Input */}
-                    <div className="col-span-2 sm:col-span-1">
-                      <BalInput
-                        label={`Search Seed (Antes 0–${analyzerMaxAnte}: Soul, Packs, Shop, Bosses…)`}
-                        value={spotlightQuery}
-                        onChange={(e) => setSpotlightQuery(e.target.value)}
-                        placeholder="Soul, Blueprint, Polychrome, Red Seal, Plant…"
-                      />
-                    </div>
                   </div>
-
-                  {/* Quick Blueprint Search Chips + Endless Ante Depth Picker */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-white/10">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <span className="text-[11px] uppercase tracking-wider text-[#b7c7ca] mr-0.5">
-                        Find:
-                      </span>
-                      {QUICK_SPOTLIGHT_TERMS.map((term) => {
-                        const isSelected = spotlightQuery.trim().toLowerCase() === term.toLowerCase();
-                        return (
-                          <button
-                            key={term}
-                            type="button"
-                            onClick={() => {
-                              playCardClick(1.1);
-                              setSpotlightQuery(isSelected ? '' : term);
-                            }}
-                            className={`rounded-[4px] border-b-2 px-1.5 py-0.5 text-[11px] font-bold cursor-pointer transition-colors ${
-                              isSelected
-                                ? 'bg-[#009dff] border-[#0068b8] text-white'
-                                : 'bg-[#223033] border-[#162022] text-[#c7d7da] hover:text-white'
-                            }`}
-                          >
-                            {term}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <span className="text-[11px] uppercase tracking-wider text-[#b7c7ca] mr-0.5">
-                        Depth:
-                      </span>
-                      {ANTE_DEPTH_OPTIONS.map((depth) => {
-                        const active = analyzerMaxAnte === depth;
-                        return (
-                          <button
-                            key={depth}
-                            type="button"
-                            onClick={() => {
-                              if (active) return;
-                              playRerollSweep();
-                              setAnalyzerMaxAnte(depth);
-                              if (analyzed) {
-                                analyzeSeedNow(
-                                  analyzed.seed,
-                                  analyzed.deck,
-                                  analyzed.stake,
-                                  undefined,
-                                  false,
-                                  depth
-                                );
-                              }
-                            }}
-                            className={`rounded-[4px] border-b-2 px-2 py-0.5 text-[11px] font-bold tabular-nums cursor-pointer ${
-                              active
-                                ? 'bg-[#f5b841] border-[#b58118] text-[#182426]'
-                                : 'bg-[#223033] border-[#162022] text-[#b7c7ca] hover:text-white'
-                            }`}
-                          >
-                            A{depth}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
+                  <BalButton
+                    tone="green"
+                    size="sm"
+                    onClick={() => {
+                      playRerollSweep();
+                      analyzeSeedNow(seedInput, deck, stake, undefined, true);
+                    }}
+                  >
+                    Go
+                  </BalButton>
                   {analyzed && (
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-1.5">
+                    <BalButton
+                      tone={copiedKey === analyzed.seed ? 'green' : 'slate'}
+                      size="sm"
+                      aria-label={`Copy ${analyzed.seed}`}
+                      onClick={() => copyWithFeedback(analyzed.seed, analyzed.seed)}
+                    >
+                      {copiedKey === analyzed.seed ? <Check size={14} /> : <Copy size={14} />}
+                    </BalButton>
+                  )}
+                </div>
+
+                {/* Deck + Stake side by side */}
+                <div className="grid grid-cols-2 gap-2">
+                  <BalSelect
+                    label="Deck"
+                    items={DECK_CYCLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                    value={deck}
+                    onChange={handleDeckChange}
+                  />
+                  <BalSelect
+                    label="Stake"
+                    items={STAKE_CYCLE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                    value={stake}
+                    onChange={handleStakeChange}
+                  />
+                </div>
+
+                {/* Single Modifiers & Endless Depth trigger */}
+                <div className="flex items-center justify-between gap-2">
+                  <BalButton
+                    tone={activeModSummary.length > 0 ? 'orange' : 'slate'}
+                    size="xs"
+                    block
+                    onClick={() => {
+                      playCardClick(1.06);
+                      setSimPanelOpen(true);
+                    }}
+                  >
+                    <SlidersHorizontal size={13} />
+                    <span>
+                      {activeModSummary.length > 0
+                        ? `Modifiers · ${activeModSummary.slice(0, 2).join(', ')}`
+                        : 'Modifiers & Endless'}
+                    </span>
+                  </BalButton>
+                </div>
+
+                {/* Slim Multi-Seed Flyer (only when queue has >1 seed) */}
+                {activeSeedQueue.seeds.length > 1 && (
+                  <div className="flex items-center justify-between gap-1.5 rounded-[6px] bg-[#223033]/90 px-2 py-1 text-[12px]">
+                    <button
+                      type="button"
+                      aria-label="Previous seed"
+                      onClick={() => stepMultiSeed(-1)}
+                      className="p-1 text-[var(--j-text-muted)] hover:text-white cursor-pointer"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <span className="truncate font-mono text-[var(--j-gold)] tabular-nums">
+                      {activeSeedQueue.label} ·{' '}
+                      {Math.max(1, activeSeedQueue.seeds.indexOf(analyzed?.seed ?? '') + 1)}/
+                      {activeSeedQueue.seeds.length}
+                    </span>
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        aria-label="Next seed"
+                        onClick={() => stepMultiSeed(1)}
+                        className="p-1 text-[var(--j-text-muted)] hover:text-white cursor-pointer"
+                      >
+                        <ChevronRight size={14} />
+                      </button>
+                      {activeSeedQueue.isCustomLoaded && (
+                        <button
+                          type="button"
+                          aria-label="Clear loaded seed list"
+                          onClick={() => {
+                            setLoadedJamlSeeds([]);
+                            setLoadedJamlName(null);
+                          }}
+                          className="p-1 text-[var(--j-red)] hover:text-white cursor-pointer"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Blueprint Ante Timeline List (Vertical on lg+, clean horizontal scroll on smaller viewports) */}
+              {analyzed && (
+                <div className="flex-1 min-h-0 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto p-2 flex lg:flex-col gap-1">
+                  {analyzed.result.antes
+                    .filter((a) => a.ante >= 1)
+                    .map((a) => {
+                      const isSel = selectedAnte === a.ante;
+                      const anteSouls = soulsByAnte.get(a.ante) ?? [];
+                      return (
+                        <button
+                          key={a.ante}
+                          type="button"
+                          onClick={() => {
+                            playCardClick(0.92 + Math.min(a.ante, 12) * 0.025);
+                            setSelectedAnte(a.ante);
+                          }}
+                          className={`shrink-0 lg:w-full text-left rounded-[6px] px-2.5 py-2 transition-colors cursor-pointer flex items-center justify-between gap-2 ${
+                            isSel
+                              ? 'bg-[#2a3f44] text-white ring-1 ring-[var(--j-border)] shadow-[0_2px_0_rgba(0,0,0,0.4)]'
+                              : 'bg-transparent text-[var(--j-text-muted)] hover:bg-white/5 hover:text-white'
+                          }`}
+                        >
+                          <div className="min-w-0 flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`font-mono text-[13px] tabular-nums ${
+                                  isSel ? 'text-[var(--j-red)]' : 'text-white/70'
+                                }`}
+                              >
+                                A{a.ante}
+                              </span>
+                              <span className="text-[14px] text-white truncate">
+                                {decodeBossName(a.boss)}
+                              </span>
+                            </div>
+                            <span className="hidden lg:block text-[12px] text-[var(--j-gold)]/90 truncate pl-6">
+                              {decodeVoucherName(a.voucher)}
+                            </span>
+                          </div>
+                          {anteSouls.length > 0 && (
+                            <span
+                              title={`Soul: ${anteSouls.join(', ')}`}
+                              className="shrink-0 text-[12px] text-[#d5b8ff] whitespace-nowrap"
+                            >
+                              ★ {anteSouls[0]}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                </div>
+              )}
+            </aside>
+
+            {/* RIGHT MAIN FELT TABLE (Spacious, Uncluttered, Card-First) */}
+            <main className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+              {analyzed && currentAnteData ? (
+                <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 lg:px-8 lg:py-6 flex flex-col gap-6">
+                  {/* Single Crisp Stage Header (Zero Pill Soup!) */}
+                  <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4 pb-4 border-b border-white/10">
+                    <div className="min-w-0 flex flex-col gap-1">
+                      <div className="flex items-baseline gap-3 flex-wrap">
+                        <h1 className="m-0 text-[30px] leading-none tracking-wide text-white [text-shadow:2px_2px_0_rgba(0,0,0,0.85)]">
+                          Ante {currentAnteData.ante}
+                        </h1>
+                        <span className="font-mono text-[18px] tracking-widest text-[var(--j-gold)]">
+                          {analyzed.seed}
+                        </span>
+                        <span className="text-[14px] text-[var(--j-text-muted)]">
+                          {analyzed.deck} Deck · {analyzed.stake} Stake
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[14px] text-[var(--j-text-muted)]">
+                        <span className="text-[var(--j-red)]">
+                          {decodeBossName(currentAnteData.boss)}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span className="text-[var(--j-gold)]">
+                          {decodeVoucherName(currentAnteData.voucher)}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>Small: {decodeTagName(currentAnteData.smallBlindTag)}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>Big: {decodeTagName(currentAnteData.bigBlindTag)}</span>
+                      </div>
+                    </div>
+
+                    {/* Right Stage Controls: Inline Find + Save + Share */}
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <div className="relative w-[210px] sm:w-[240px]">
+                        <Search
+                          size={14}
+                          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--j-text-muted)]"
+                        />
+                        <input
+                          type="text"
+                          aria-label="Find in seed"
+                          value={spotlightQuery}
+                          onChange={(e) => setSpotlightQuery(e.target.value)}
+                          placeholder="Find Soul, Blueprint, Seal…"
+                          className="w-full rounded-[6px] border-2 border-white/15 bg-[#182426]/90 pl-8 pr-7 py-1.5 text-[14px] text-white placeholder:text-[var(--j-text-muted)]/60 focus:outline-none focus:border-[var(--j-focus)]"
+                        />
+                        {spotlightQuery && (
+                          <button
+                            type="button"
+                            aria-label="Clear search"
+                            onClick={() => setSpotlightQuery('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--j-text-muted)] hover:text-white cursor-pointer"
+                          >
+                            <X size={13} />
+                          </button>
+                        )}
+                      </div>
+
                       <BalButton
                         tone={isSeedSaved(analyzed.seed, analyzed.deck) ? 'gold' : 'slate'}
-                        size="sm"
-                        className="w-full sm:w-auto"
+                        size="xs"
                         onClick={() =>
                           toggleBookmarkSeed(
                             analyzed.seed,
@@ -2876,65 +2309,28 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                       </BalButton>
 
                       <BalButton
-                        tone={analyzerSubTab === 'guide' ? 'green' : 'blue'}
-                        size="sm"
-                        className="w-full sm:w-auto"
-                        active={analyzerSubTab === 'guide'}
-                        onClick={() => {
-                          playCardClick(1.12);
-                          setAnalyzerSubTab('guide');
-                        }}
-                      >
-                        <Route size={14} />
-                        <span>Run Guide{routePicks.length > 0 ? ` (${routePicks.length})` : ''}</span>
-                      </BalButton>
-
-                      <BalButton
-                        tone={analyzerSubTab === 'card' ? 'gold' : 'blue'}
-                        size="sm"
-                        className="w-full sm:w-auto"
-                        active={analyzerSubTab === 'card'}
-                        onClick={() => {
-                          playCardClick(1.15);
-                          setAnalyzerSubTab('card');
-                        }}
-                      >
-                        <CreditCard size={14} />
-                        <span>Seed Card</span>
-                      </BalButton>
-
-                      <BalButton
                         tone="purple"
-                        size="sm"
-                        className="w-full sm:w-auto"
+                        size="xs"
                         onClick={() => {
                           playCardClick(1.1);
                           setShareOpen(true);
                         }}
                       >
-                        <Share2 size={14} />
-                        <span>Share /seed</span>
-                      </BalButton>
-
-                      <BalButton
-                        tone={copiedKey === analyzed.seed ? 'green' : 'orange'}
-                        size="sm"
-                        className="col-span-2 sm:col-span-1 sm:w-auto"
-                        onClick={() => copyWithFeedback(analyzed.seed, analyzed.seed)}
-                      >
-                        {copiedKey === analyzed.seed ? <Check size={14} /> : <Copy size={14} />}
-                        <span>{copiedKey === analyzed.seed ? 'Copied' : analyzed.seed}</span>
+                        <Share2 size={13} />
+                        <span>Share</span>
                       </BalButton>
                     </div>
-                  )}
-                </BalPanel>
+                  </div>
 
-                {/* Deep Find-in-Seed Instant Jump Results across Antes 0..analyzerMaxAnte */}
-                {spotlightQuery.trim().length >= 2 && (
-                  <BalPanel
-                    title={`Found ${spotlightHits.length} hit${spotlightHits.length === 1 ? '' : 's'} for "${spotlightQuery.trim()}" (Antes 0–${analyzerMaxAnte})`}
-                    rightSlot={
-                      <div className="flex items-center gap-1.5">
+                  {/* Instant Spotlight Jump Results (only visible while searching) */}
+                  {spotlightQuery.trim().length >= 2 && (
+                    <div className="rounded-[8px] border border-white/15 bg-[#182426]/90 p-3.5 flex flex-col gap-2.5">
+                      <div className="flex items-center justify-between gap-2 text-[14px]">
+                        <span className="text-[var(--j-text-muted)]">
+                          <strong className="text-white font-normal">{spotlightMatches.length}</strong>{' '}
+                          match{spotlightMatches.length === 1 ? '' : 'es'} for &ldquo;
+                          {spotlightQuery.trim()}&rdquo; across Antes 0–{analyzerMaxAnte}
+                        </span>
                         {analyzerMaxAnte < 25 && (
                           <BalButton
                             tone="gold"
@@ -2942,645 +2338,1105 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                             onClick={() => {
                               playRerollSweep();
                               setAnalyzerMaxAnte(25);
-                              if (analyzed) {
-                                analyzeSeedNow(
-                                  analyzed.seed,
-                                  analyzed.deck,
-                                  analyzed.stake,
-                                  undefined,
-                                  false,
-                                  25
-                                );
-                              }
+                              analyzeSeedNow(
+                                analyzed.seed,
+                                analyzed.deck,
+                                analyzed.stake,
+                                undefined,
+                                false,
+                                25
+                              );
                             }}
                           >
-                            Scan to Ante 25
+                            Scan to A25
                           </BalButton>
                         )}
-                        <BalButton tone="slate" size="xs" onClick={() => setSpotlightQuery('')}>
-                          <X size={12} />
-                          <span>Clear</span>
-                        </BalButton>
                       </div>
-                    }
-                    className="bg-[#2a3b3f]/95"
-                  >
-                    {spotlightHits.length === 0 ? (
-                      <div className="text-[14px] text-[#b7c7ca]">
-                        No matches across Antes 0–{analyzerMaxAnte} (shop slots, packs, souls, vouchers, bosses, tags, pulls).
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {spotlightHits.map((hit, i) => (
-                          <BalButton
-                            key={`${hit.ante}-${hit.location}-${i}`}
-                            tone={hit.location.startsWith('Soul') ? 'purple' : 'blue'}
-                            size="xs"
+                      {spotlightMatches.length === 0 ? (
+                        <div className="text-[13px] text-[var(--j-text-muted)]">
+                          Nothing matched in Shops, Packs, Souls, Vouchers, Bosses, Tags, or Pulls.
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {spotlightMatches.slice(0, 36).map((match, i) => (
+                            <BalButton
+                              key={`${match.ante}-${match.location}-${i}`}
+                              tone={match.location.startsWith('Soul') ? 'purple' : 'blue'}
+                              size="xs"
+                              onClick={() => {
+                                playCardClick(1.1);
+                                setSelectedAnte(match.ante);
+                                setAnalyzerSubTab(match.subTab);
+                              }}
+                            >
+                              A{match.ante} · {match.location}: {match.name}
+                              {match.edition ? ` (${match.edition})` : ''}
+                            </BalButton>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Clean 5-View Segmented Switcher */}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="inline-flex flex-wrap items-center gap-1 rounded-[8px] bg-[#182426]/85 p-1 border border-white/10">
+                      {(
+                        [
+                          ['shop', 'Table'],
+                          ['map', 'JAML Map'],
+                          ['guide', routePicks.length > 0 ? `Run Guide (${routePicks.length})` : 'Run Guide'],
+                          ['card', 'Seed Card'],
+                          ['rng', analyzed.result.erraticDeck ? 'Pulls & Deck' : 'Pulls & RNG'],
+                        ] as const
+                      ).map(([key, label]) => {
+                        const active = topExplorerView === key;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
                             onClick={() => {
-                              playCardClick(1.1);
-                              setSelectedAnte(hit.ante);
-                              setAnalyzerSubTab(hit.subTab);
+                              playCardClick(1.06);
+                              setAnalyzerSubTab(key === 'rng' ? (isRngView ? analyzerSubTab : 'pulls') : key);
                             }}
+                            className={`rounded-[6px] px-3 py-1.5 text-[14px] leading-none transition-colors cursor-pointer whitespace-nowrap ${
+                              active
+                                ? 'bg-[var(--j-blue)] text-white shadow-[0_2px_0_var(--j-blue-deep)]'
+                                : 'text-[var(--j-text-muted)] hover:text-white hover:bg-white/5'
+                            }`}
                           >
-                            A{hit.ante} · {hit.location}: {hit.name}
-                            {hit.edition ? ` (${hit.edition})` : ''}
-                          </BalButton>
-                        ))}
-                      </div>
-                    )}
-                  </BalPanel>
-                )}
-
-                {/* Blueprint-style Interactive Run Route / Shopping List */}
-                {routePicks.length > 0 && analyzed && (
-                  <BalPanel
-                    title={`Planned Run Route (${routePicks.length} picks)`}
-                    rightSlot={
-                      <div className="flex items-center gap-1.5">
-                        <BalButton
-                          tone={copiedKey === 'route' ? 'green' : 'gold'}
-                          size="xs"
-                          onClick={() => {
-                            const md = [
-                              `# Balatro Seed Route: ${analyzed.seed} (${analyzed.deck} / ${analyzed.stake})`,
-                              ...routePicks.map(
-                                (p) =>
-                                  `- **Ante ${p.ante}** · ${p.location}: ${p.name}${p.edition ? ` (${p.edition})` : ''}`
-                              ),
-                            ].join('\n');
-                            copyWithFeedback('route', md);
-                          }}
-                        >
-                          <Route size={13} />
-                          <span>{copiedKey === 'route' ? 'Copied Route!' : 'Copy Markdown'}</span>
-                        </BalButton>
-                        <BalButton
-                          tone="red"
-                          size="xs"
-                          onClick={() => {
-                            playCardClick(0.8);
-                            setRoutePicks([]);
-                          }}
-                        >
-                          Clear
-                        </BalButton>
-                      </div>
-                    }
-                    className="bg-[#2c3a2b]/95"
-                  >
-                    <div className="flex flex-wrap gap-1.5 text-[13px]">
-                      {routePicks.map((p) => (
-                        <button
-                          key={p.key}
-                          type="button"
-                          onClick={() => {
-                            setSelectedAnte(p.ante);
-                            playCardClick(1.05);
-                          }}
-                          className="rounded-[5px] border border-[#f5b841] bg-[#182426] px-2 py-1 text-white hover:bg-[#243639] cursor-pointer"
-                        >
-                          <span className="text-[#f5b841]">A{p.ante}</span> · {p.location}:{' '}
-                          {p.name}
-                          {p.edition ? ` (${p.edition})` : ''}
-                        </button>
-                      ))}
+                            {label}
+                          </button>
+                        );
+                      })}
                     </div>
-                  </BalPanel>
-                )}
 
-                {/* MotelyWith Live Simulator (Vouchers + Showman + Held Legendaries + Luck) */}
-                <BalPanel
-                  title="Held Vouchers, Legendaries, Showman & Luck (MotelyWith)"
-                  rightSlot={
-                    simVouchers.length > 0 || simLegendaries.length > 0 ? (
-                      <BalButton
-                        tone="red"
-                        size="xs"
-                        onClick={() => {
-                          playCardClick(0.85);
-                          setSimVouchers([]);
-                          setSimLegendaries([]);
-                          reanalyzeWithSim(simLuckKey, simShowman, [], []);
-                        }}
-                      >
-                        Reset Held ({simVouchers.length + simLegendaries.length})
-                      </BalButton>
-                    ) : undefined
-                  }
-                  className="flex flex-col gap-2.5 bg-[#36494d]/95"
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[220px_190px_1fr] items-end gap-3">
-                    <BalCycle
-                      label="Luck"
-                      options={LUCK_OPTIONS}
-                      value={simLuckKey}
-                      onChange={(val) => {
-                        playCardClick(1.12);
-                        setSimLuckKey(val);
-                        reanalyzeWithSim(val, simShowman, simVouchers, simLegendaries);
-                      }}
-                      tone="green"
-                      pips
-                    />
-                    <div className="pb-0.5">
-                      <BalSwitch
-                        label="Hold Showman"
-                        tone="purple"
-                        checked={simShowman}
-                        onChange={(checked) => {
-                          playCardClick(1.1);
-                          setSimShowman(checked);
-                          reanalyzeWithSim(simLuckKey, checked, simVouchers, simLegendaries);
-                        }}
-                      />
-                    </div>
-                    <span className="text-[12px] text-[#b7c7ca] sm:col-span-2 lg:col-span-1 lg:text-right">
-                      Tap any card to pin it to your Run Route
+                    <span className="hidden md:inline text-[13px] text-[var(--j-text-muted)]">
+                      Click any card to pin to Run Guide · [ / ] step Antes
                     </span>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[12px] text-[#b7c7ca] mr-1">Held Souls:</span>
-                    {LEGENDARY_JOKERS.map((leg) => {
-                      const active = simLegendaries.includes(leg.key);
-                      return (
-                        <BalButton
-                          key={leg.key}
-                          tone={active ? 'purple' : 'slate'}
-                          size="xs"
-                          active={active}
-                          onClick={() => toggleSimLegendary(leg.key)}
-                        >
-                          {active ? `✓ ${leg.label}` : leg.label}
-                        </BalButton>
-                      );
-                    })}
-                  </div>
+                  {/* SUB-VIEW: BLUEPRINT FELT TABLE (Shop Queue + Booster Packs + Souls) */}
+                  {analyzerSubTab === 'shop' && (
+                    <div className="flex flex-col gap-7">
+                      {/* Soul Legendaries Strip (only when present) */}
+                      {analyzed.result.legendaryOrder.length > 0 && (
+                        <section className="flex flex-col gap-2.5">
+                          <div className="flex items-baseline justify-between">
+                            <h2 className="m-0 text-[18px] text-[#d5b8ff] [text-shadow:1px_1px_0_rgba(0,0,0,0.8)]">
+                              Soul Legendaries
+                            </h2>
+                            <span className="text-[13px] text-[var(--j-text-muted)]">
+                              Guaranteed Soul sequence for this seed
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-3">
+                            {analyzed.result.legendaryOrder.map((leg, idx) => {
+                              const decoded = decodeItem(leg.item);
+                              const rKey = `A${leg.ante}-soul-${leg.packSlot}-${idx}`;
+                              return (
+                                <div
+                                  key={rKey}
+                                  className="flex items-center gap-3 rounded-[8px] border border-[#9e74ce]/45 bg-[#231c2e]/85 px-3 py-2"
+                                >
+                                  <BalCard
+                                    item={leg.item}
+                                    width={48}
+                                    showLabel={false}
+                                    selected={routeKeySet.has(rKey)}
+                                    onClick={() =>
+                                      toggleRouteCard(
+                                        rKey,
+                                        leg.ante,
+                                        `Soul Pack #${leg.packSlot + 1}`,
+                                        leg.item
+                                      )
+                                    }
+                                  />
+                                  <div className="flex flex-col gap-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        playCardClick(1.08);
+                                        setSelectedAnte(leg.ante);
+                                      }}
+                                      className="text-left text-[16px] text-white hover:text-[var(--j-gold)] cursor-pointer"
+                                    >
+                                      {decodeJokerEnumName(leg.joker)}
+                                    </button>
+                                    <span className="text-[13px] text-[var(--j-text-muted)] tabular-nums">
+                                      Ante {leg.ante} · Pack #{leg.packSlot + 1}
+                                      {decoded.edition ? ` · ${decoded.edition}` : ''}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </section>
+                      )}
 
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[12px] text-[#b7c7ca] mr-1">Vouchers:</span>
-                    {SIM_VOUCHERS.map((v) => {
-                      const active = simVouchers.includes(v.key);
-                      return (
-                        <BalButton
-                          key={v.key}
-                          tone={active ? 'orange' : 'slate'}
-                          size="xs"
-                          active={active}
-                          onClick={() => toggleSimVoucher(v.key)}
-                        >
-                          {active ? `✓ ${v.label}` : v.label}
-                        </BalButton>
-                      );
-                    })}
-                  </div>
-                </BalPanel>
+                      {/* Shop Queue — Big, Clean, Breathable Cards */}
+                      <section className="flex flex-col gap-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-baseline gap-2.5">
+                            <h2 className="m-0 text-[20px] text-white [text-shadow:1px_1px_0_rgba(0,0,0,0.8)]">
+                              Shop Queue
+                            </h2>
+                            <span className="text-[13px] text-[var(--j-text-muted)] tabular-nums">
+                              {currentShopItems.length} slots shown
+                            </span>
+                          </div>
+                          <BalButton
+                            tone="blue"
+                            size="xs"
+                            disabled={isLoadingMore}
+                            onClick={handleLoadMoreShop}
+                          >
+                            <Plus size={13} />
+                            <span>{isLoadingMore ? 'Rolling…' : 'Roll +15 Slots'}</span>
+                          </BalButton>
+                        </div>
 
-                {analyzed && (
-                  <>
-                    {/* Legendary Soul Order Strip */}
-                    {analyzed.result.legendaryOrder.length > 0 && (
-                      <BalPanel title="Soul Legendary Order" className="bg-[#36494d]/95">
-                        <div className="flex flex-wrap gap-3">
-                          {analyzed.result.legendaryOrder.map((leg, idx) => {
-                            const decoded = decodeItem(leg.item);
-                            const rKey = `A${leg.ante}-soul-${leg.packSlot}-${idx}`;
+                        <div className="rounded-[10px] border border-white/10 bg-[#173a2e]/55 p-4 flex flex-wrap gap-3">
+                          {currentShopItems.map((item, idx) => {
+                            const rKey = `A${currentAnteData.ante}-shop-${idx}`;
+                            return (
+                              <BalCard
+                                key={rKey}
+                                item={item}
+                                index={idx}
+                                width={66}
+                                selected={routeKeySet.has(rKey)}
+                                onClick={() =>
+                                  toggleRouteCard(
+                                    rKey,
+                                    currentAnteData.ante,
+                                    `Shop #${idx + 1}`,
+                                    item
+                                  )
+                                }
+                              />
+                            );
+                          })}
+                        </div>
+                      </section>
+
+                      {/* Booster Packs — Clean Two-Column Table Grid */}
+                      <section className="flex flex-col gap-3">
+                        <div className="flex items-baseline gap-2.5">
+                          <h2 className="m-0 text-[20px] text-white [text-shadow:1px_1px_0_rgba(0,0,0,0.8)]">
+                            Booster Packs
+                          </h2>
+                          <span className="text-[13px] text-[var(--j-text-muted)] tabular-nums">
+                            {currentAnteData.packs.length} packs in Ante {currentAnteData.ante}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                          {currentAnteData.packs.map((pack, pIdx) => {
+                            const pkLabel = decodePackName(pack.pack);
                             return (
                               <div
-                                key={rKey}
-                                className="flex items-center gap-2.5 rounded-[6px] border-2 border-[#162022] bg-[#223033] p-2"
+                                key={pIdx}
+                                className="rounded-[10px] border border-white/10 bg-[#182426]/80 p-3.5 flex flex-col gap-3"
                               >
-                                <BalCard
-                                  item={leg.item}
-                                  width={50}
-                                  showLabel={false}
-                                  selected={routeKeySet.has(rKey)}
-                                  onClick={() =>
-                                    toggleRouteCard(
-                                      rKey,
-                                      leg.ante,
-                                      `Soul Pack #${leg.packSlot + 1}`,
-                                      leg.item
-                                    )
-                                  }
-                                />
-                                <div className="flex flex-col gap-0.5 text-[13px]">
-                                  <span className="text-white text-[15px] [text-shadow:1px_1px_0_rgba(0,0,0,0.75)]">
-                                    {decodeJokerEnumName(leg.joker)}
+                                <div className="flex items-baseline justify-between gap-2">
+                                  <span className="text-[16px] text-[var(--j-gold)]">
+                                    #{pIdx + 1} · {pkLabel}
                                   </span>
-                                  <span className="text-[#b7c7ca] tabular-nums">
-                                    Ante {leg.ante} · Pack #{leg.packSlot + 1}
+                                  <span className="text-[12px] text-[var(--j-text-muted)] tabular-nums">
+                                    {pack.items.length} cards
                                   </span>
-                                  {decoded.edition && (
-                                    <span
-                                      className={`inline-block w-fit rounded-[4px] border-b-2 px-1.5 py-0.5 text-[11px] leading-none ${editionBadgeClass(decoded.edition)}`}
-                                    >
-                                      {decoded.edition}
-                                    </span>
-                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-2.5">
+                                  {pack.items.map((item, cIdx) => {
+                                    const rKey = `A${currentAnteData.ante}-pack-${pIdx}-${cIdx}`;
+                                    return (
+                                      <BalCard
+                                        key={rKey}
+                                        item={item}
+                                        width={60}
+                                        selected={routeKeySet.has(rKey)}
+                                        onClick={() =>
+                                          toggleRouteCard(
+                                            rKey,
+                                            currentAnteData.ante,
+                                            `Pack #${pIdx + 1} (${pkLabel})`,
+                                            item
+                                          )
+                                        }
+                                      />
+                                    );
+                                  })}
                                 </div>
                               </div>
                             );
                           })}
                         </div>
-                      </BalPanel>
-                    )}
-
-                    {/* Ante Selector Strip (5-col mobile grid, inline on sm+) */}
-                    <div className="grid grid-cols-5 sm:flex sm:flex-wrap items-center gap-1.5">
-                      {analyzed.result.antes.map((a) => (
-                        <BalButton
-                          key={a.ante}
-                          tone={selectedAnte === a.ante ? 'red' : 'blue'}
-                          size="xs"
-                          className="w-full sm:w-auto"
-                          active={selectedAnte === a.ante}
-                          onClick={() => {
-                            playCardClick(0.9 + a.ante * 0.04);
-                            setSelectedAnte(a.ante);
-                          }}
-                        >
-                          <span className="sm:hidden">A{a.ante}</span>
-                          <span className="hidden sm:inline">Ante {a.ante}</span>
-                        </BalButton>
-                      ))}
+                      </section>
                     </div>
+                  )}
 
-                    {currentAnteData && (
-                      <>
-                        {/* Ante Overview Row */}
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                          <BalPanel variant="inset" className="flex flex-col gap-0.5">
-                            <span className="text-[12px] text-[#b7c7ca]">Boss Blind</span>
-                            <span className="text-[15px] sm:text-[16px] text-[#fe5f55] truncate">
-                              {decodeBossName(currentAnteData.boss)}
-                            </span>
-                          </BalPanel>
-                          <BalPanel variant="inset" className="flex flex-col gap-0.5">
-                            <span className="text-[12px] text-[#b7c7ca]">Voucher</span>
-                            <span className="text-[15px] sm:text-[16px] text-[#f5b841] truncate">
-                              {decodeVoucherName(currentAnteData.voucher)}
-                            </span>
-                          </BalPanel>
-                          <BalPanel variant="inset" className="flex flex-col gap-0.5">
-                            <span className="text-[12px] text-[#b7c7ca]">Small Blind Tag</span>
-                            <span className="text-[15px] sm:text-[16px] text-white truncate">
-                              {decodeTagName(currentAnteData.smallBlindTag)}
-                            </span>
-                          </BalPanel>
-                          <BalPanel variant="inset" className="flex flex-col gap-0.5">
-                            <span className="text-[12px] text-[#b7c7ca]">Big Blind Tag</span>
-                            <span className="text-[15px] sm:text-[16px] text-white truncate">
-                              {decodeTagName(currentAnteData.bigBlindTag)}
-                            </span>
-                          </BalPanel>
-                        </div>
+                  {/* SUB-VIEW: JAML MAP */}
+                  {analyzerSubTab === 'map' && (
+                    <JamlSeedMap
+                      seed={analyzed.seed}
+                      deck={analyzed.deck}
+                      stake={analyzed.stake}
+                      result={analyzed.result}
+                      shopByAnte={analyzed.shopByAnte}
+                      activeFilter={parsedFilter}
+                      selectedAnte={selectedAnte}
+                      routeKeySet={routeKeySet}
+                      onToggleRouteCard={toggleRouteCard}
+                      onJumpToAnteShop={(anteNum) => {
+                        setSelectedAnte(anteNum);
+                        setAnalyzerSubTab('shop');
+                      }}
+                    />
+                  )}
 
-                        {/* Sub-Tabs (3-col mobile grid so nothing overflows horizontally) */}
-                        <BalTabs<AnalyzerSubTab>
-                          tone="blue"
-                          size="xs"
-                          value={analyzerSubTab}
-                          className="grid grid-cols-3 sm:flex sm:flex-wrap items-center gap-1.5 w-full sm:w-auto"
-                          onChange={(v) => {
-                            playCardClick(1.08);
-                            setAnalyzerSubTab(v);
-                          }}
-                          tabs={[
-                            { value: 'map', label: 'JAML Map' },
-                            {
-                              value: 'guide',
-                              label: `Guide${routePicks.length > 0 ? ` (${routePicks.length})` : ''}`,
-                            },
-                            { value: 'shop', label: 'Shop & Packs' },
-                            { value: 'card', label: 'Seed Card' },
-                            { value: 'pulls', label: 'Pulls' },
-                            { value: 'streams', label: 'Streams' },
-                            {
-                              value: 'events',
-                              label: analyzed.result.erraticDeck ? 'Events/Deck' : 'Events',
-                            },
-                          ]}
-                        />
+                  {/* SUB-VIEW: BLUEPRINT RUN GUIDE */}
+                  {analyzerSubTab === 'guide' && (
+                    <BlueprintRunGuide
+                      seed={analyzed.seed}
+                      deck={analyzed.deck}
+                      stake={analyzed.stake}
+                      maxAnte={analyzerMaxAnte}
+                      result={analyzed.result}
+                      shopByAnte={analyzed.shopByAnte}
+                      routePicks={routePicks}
+                      simVouchers={simVouchers}
+                      simLegendaries={simLegendaries}
+                      simShowman={simShowman}
+                      onSetRoutePicks={setRoutePicks}
+                      onRemovePick={(key) =>
+                        setRoutePicks((prev) => prev.filter((p) => p.key !== key))
+                      }
+                      onToggleSimVoucher={toggleSimVoucher}
+                      onToggleSimLegendary={toggleSimLegendary}
+                      onToggleSimShowman={(next) => {
+                        playCardClick(1.1);
+                        setSimShowman(next);
+                        reanalyzeWithSim(simLuckKey, next, simVouchers, simLegendaries);
+                      }}
+                      onJumpToAnte={(anteNum, subTab = 'shop') => {
+                        setSelectedAnte(anteNum);
+                        setAnalyzerSubTab(subTab);
+                      }}
+                    />
+                  )}
 
-                        {/* SUB-TAB MAP: INTERACTIVE MOBILE-FIRST JAML SEED MAP */}
-                        {analyzerSubTab === 'map' && (
-                          <JamlSeedMap
-                            seed={analyzed.seed}
-                            deck={analyzed.deck}
-                            stake={analyzed.stake}
-                            result={analyzed.result}
-                            shopByAnte={analyzed.shopByAnte}
-                            activeFilter={parsedFilter}
-                            selectedAnte={selectedAnte}
-                            routeKeySet={routeKeySet}
-                            onToggleRouteCard={toggleRouteCard}
-                            onJumpToAnteShop={(anteNum) => {
-                              setSelectedAnte(anteNum);
-                              setAnalyzerSubTab('shop');
+                  {/* SUB-VIEW: SEED CARD STUDIO */}
+                  {analyzerSubTab === 'card' && (
+                    <SeedCardStudio
+                      seed={analyzed.seed}
+                      deck={analyzed.deck}
+                      stake={analyzed.stake}
+                      ante={currentAnteData.ante}
+                      result={analyzed.result}
+                      shopItems={currentShopItems}
+                      onSelectAnte={setSelectedAnte}
+                    />
+                  )}
+
+                  {/* SUB-VIEW: UNIFIED PULLS, STREAMS & RNG EVENTS / ERRATIC DECK */}
+                  {isRngView && (
+                    <div className="flex flex-col gap-4">
+                      <div className="flex items-center gap-2 border-b border-white/10 pb-2.5">
+                        {(
+                          [
+                            ['pulls', 'Card Pulls'],
+                            ['streams', 'Shop Streams'],
+                            ['events', analyzed.result.erraticDeck ? 'RNG & Erratic Deck' : 'RNG Events'],
+                          ] as const
+                        ).map(([sub, label]) => (
+                          <button
+                            key={sub}
+                            type="button"
+                            onClick={() => {
+                              playCardClick(1.05);
+                              setAnalyzerSubTab(sub);
                             }}
-                          />
-                        )}
+                            className={`rounded-[6px] px-3 py-1 text-[13px] transition-colors cursor-pointer ${
+                              analyzerSubTab === sub
+                                ? 'bg-white/15 text-white'
+                                : 'text-[var(--j-text-muted)] hover:text-white'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
 
-                        {/* SUB-TAB GUIDE: INTERACTIVE BLUEPRINT RUN GUIDE + REROLL ECON */}
-                        {analyzerSubTab === 'guide' && (
-                          <BlueprintRunGuide
-                            seed={analyzed.seed}
-                            deck={analyzed.deck}
-                            stake={analyzed.stake}
-                            maxAnte={analyzerMaxAnte}
-                            result={analyzed.result}
-                            shopByAnte={analyzed.shopByAnte}
-                            routePicks={routePicks}
-                            simVouchers={simVouchers}
-                            simLegendaries={simLegendaries}
-                            simShowman={simShowman}
-                            onSetRoutePicks={setRoutePicks}
-                            onRemovePick={(key) =>
-                              setRoutePicks((prev) => prev.filter((p) => p.key !== key))
-                            }
-                            onToggleSimVoucher={toggleSimVoucher}
-                            onToggleSimLegendary={toggleSimLegendary}
-                            onToggleSimShowman={(next) => {
-                              playCardClick(1.1);
-                              setSimShowman(next);
-                              reanalyzeWithSim(simLuckKey, next, simVouchers, simLegendaries);
-                            }}
-                            onJumpToAnte={(anteNum, subTab = 'shop') => {
-                              setSelectedAnte(anteNum);
-                              setAnalyzerSubTab(subTab);
-                            }}
-                          />
-                        )}
-
-                        {/* SUB-TAB 0: HIGH-FIDELITY BALATRO SEED CARD STUDIO */}
-                        {analyzerSubTab === 'card' && (
-                          <SeedCardStudio
-                            seed={analyzed.seed}
-                            deck={analyzed.deck}
-                            stake={analyzed.stake}
-                            ante={currentAnteData.ante}
-                            result={analyzed.result}
-                            shopItems={currentShopItems}
-                            onSelectAnte={setSelectedAnte}
-                          />
-                        )}
-
-                        {/* SUB-TAB A: SHOP QUEUE + BOOSTER PACKS */}
-                        {analyzerSubTab === 'shop' && (
-                          <div className="flex flex-col gap-3">
-                            <BalPanel
-                              variant="felt"
-                              title={`Ante ${currentAnteData.ante} Shop (${currentShopItems.length})`}
-                              rightSlot={
-                                <BalButton
-                                  tone="blue"
-                                  size="xs"
-                                  disabled={isLoadingMore}
-                                  onClick={handleLoadMoreShop}
+                      {analyzerSubTab === 'pulls' && (
+                        <div className="flex flex-col gap-3">
+                          <BalPanel variant="inset">
+                            <div className="text-[14px] text-[var(--j-gold)] mb-1">
+                              Voucher Sequence (Ante {currentAnteData.ante})
+                            </div>
+                            <div className="flex flex-wrap gap-2 text-[14px] text-white">
+                              {currentAnteData.pulls.voucherSequence.map((v, idx) => (
+                                <span
+                                  key={`v-${idx}`}
+                                  className={idx === 0 ? 'text-[var(--j-gold)]' : 'text-[#d4c2f0]'}
                                 >
-                                  <Plus size={13} />
-                                  <span>{isLoadingMore ? 'Rolling…' : '+15 Slots'}</span>
-                                </BalButton>
-                              }
-                              className="flex flex-col gap-3"
-                            >
-                              <div className="grid grid-cols-4 sm:flex sm:flex-wrap gap-2 justify-items-center">
-                                {currentShopItems.map((item, idx) => {
-                                  const rKey = `A${currentAnteData.ante}-shop-${idx}`;
-                                  return (
-                                    <BalCard
-                                      key={rKey}
-                                      item={item}
-                                      index={idx}
-                                      width={58}
-                                      selected={routeKeySet.has(rKey)}
-                                      onClick={() =>
-                                        toggleRouteCard(
-                                          rKey,
-                                          currentAnteData.ante,
-                                          `Shop #${idx + 1}`,
-                                          item
-                                        )
-                                      }
-                                    />
-                                  );
-                                })}
-                              </div>
-                              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/15">
-                                <span className="text-[12px] sm:text-[13px] text-[#c7dcd3] tabular-nums">
-                                  Offset: {analyzed.result.streamStates.shopOffset} slots rolled
+                                  #{idx + 1} {decodeVoucherName(v)}
+                                  {idx < currentAnteData.pulls.voucherSequence.length - 1 ? ' · ' : ''}
                                 </span>
-                                <BalButton
-                                  tone="orange"
-                                  size="sm"
-                                  disabled={isLoadingMore}
-                                  onClick={handleLoadMoreShop}
-                                >
-                                  <Plus size={14} />
-                                  <span>{isLoadingMore ? 'Rolling…' : 'Roll +15 Shop Slots'}</span>
-                                </BalButton>
-                              </div>
-                            </BalPanel>
+                              ))}
+                            </div>
+                          </BalPanel>
 
-                            <BalPanel
-                              title={`Ante ${currentAnteData.ante} Booster Packs (${currentAnteData.packs.length})`}
-                              className="flex flex-col gap-3 bg-[#36494d]/95"
-                            >
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {currentAnteData.packs.map((pack, pIdx) => {
-                                  const pkLabel = decodePackName(pack.pack);
-                                  return (
-                                    <BalPanel key={pIdx} variant="inset" className="flex flex-col gap-2">
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-[15px] text-[#f5b841]">
-                                          #{pIdx + 1} · {pkLabel}
-                                        </span>
-                                        <span className="text-[12px] text-[#b7c7ca] tabular-nums">
-                                          {pack.items.length} cards
-                                        </span>
-                                      </div>
-                                      <div className="flex flex-wrap gap-2">
-                                        {pack.items.map((item, cIdx) => {
-                                          const rKey = `A${currentAnteData.ante}-pack-${pIdx}-${cIdx}`;
-                                          return (
-                                            <BalCard
-                                              key={rKey}
-                                              item={item}
-                                              width={54}
-                                              selected={routeKeySet.has(rKey)}
-                                              onClick={() =>
-                                                toggleRouteCard(
-                                                  rKey,
-                                                  currentAnteData.ante,
-                                                  `Pack #${pIdx + 1} (${pkLabel})`,
-                                                  item
-                                                )
-                                              }
-                                            />
-                                          );
-                                        })}
-                                      </div>
-                                    </BalPanel>
-                                  );
-                                })}
-                              </div>
-                            </BalPanel>
-                          </div>
-                        )}
+                          {renderRoutableCardRow('Judgement Jokers', currentAnteData.pulls.judgementJokers, currentAnteData.ante, 'judg')}
+                          {renderRoutableCardRow('Wraith (Rare) Jokers', currentAnteData.pulls.wraithJokers, currentAnteData.ante, 'wraith')}
+                          {renderRoutableCardRow('Rare Tag Jokers', currentAnteData.pulls.rareTagJokers, currentAnteData.ante, 'rtag')}
+                          {renderRoutableCardRow('Uncommon Tag Jokers', currentAnteData.pulls.uncommonTagJokers, currentAnteData.ante, 'utag')}
+                          {renderRoutableCardRow('Riff-Raff Jokers', currentAnteData.pulls.riffRaffJokers, currentAnteData.ante, 'riff')}
+                          {renderRoutableCardRow('Emperor Tarots', currentAnteData.pulls.emperorTarots, currentAnteData.ante, 'emp')}
+                          {renderRoutableCardRow('Purple Seal / 8-Ball Tarots', currentAnteData.pulls.purpleSealTarots, currentAnteData.ante, 'pseal')}
+                          {renderRoutableCardRow('Sixth Sense Spectrals', currentAnteData.pulls.sixthSenseSpectrals, currentAnteData.ante, 'sixth')}
+                          {renderRoutableCardRow('Séance Spectrals', currentAnteData.pulls.seanceSpectrals, currentAnteData.ante, 'seance')}
+                        </div>
+                      )}
 
-                        {/* SUB-TAB B: PULLS */}
-                        {analyzerSubTab === 'pulls' && (
-                          <div className="flex flex-col gap-3">
-                            <BalPanel variant="inset" className="flex flex-col gap-2">
-                              <span className="text-[15px] text-[#f5b841]">
-                                Voucher Sequence (Ante {currentAnteData.ante})
-                              </span>
-                              <div className="flex flex-wrap gap-2 text-[14px] text-white">
-                                {currentAnteData.pulls.voucherSequence.map((v, idx) => (
-                                  <span
-                                    key={`v-${idx}`}
-                                    className={idx === 0 ? 'text-[#f5b841]' : 'text-[#d4c2f0]'}
-                                  >
-                                    #{idx + 1} {decodeVoucherName(v)}
-                                    {idx < currentAnteData.pulls.voucherSequence.length - 1 ? ' · ' : ''}
-                                  </span>
-                                ))}
-                              </div>
-                            </BalPanel>
+                      {analyzerSubTab === 'streams' && (
+                        <div className="flex flex-col gap-3">
+                          {renderRoutableCardRow('Shop Jokers (All)', currentAnteData.shopStreams.shopJokers, currentAnteData.ante, 'sj')}
+                          {renderRoutableCardRow('Rare Shop Jokers', currentAnteData.shopStreams.rareShopJokers, currentAnteData.ante, 'srj')}
+                          {renderRoutableCardRow('Uncommon Shop Jokers', currentAnteData.shopStreams.uncommonShopJokers, currentAnteData.ante, 'suj')}
+                          {renderRoutableCardRow('Common Shop Jokers', currentAnteData.shopStreams.commonShopJokers, currentAnteData.ante, 'scj')}
+                          {renderRoutableCardRow('Shop Tarots', currentAnteData.shopStreams.shopTarots, currentAnteData.ante, 'st')}
+                          {renderRoutableCardRow('Shop Planets', currentAnteData.shopStreams.shopPlanets, currentAnteData.ante, 'sp')}
+                          {renderRoutableCardRow('Shop Spectrals', currentAnteData.shopStreams.shopSpectrals, currentAnteData.ante, 'ss')}
+                        </div>
+                      )}
 
-                            {renderRoutableCardRow('Judgement Jokers', currentAnteData.pulls.judgementJokers, currentAnteData.ante, 'judg')}
-                            {renderRoutableCardRow('Wraith (Rare) Jokers', currentAnteData.pulls.wraithJokers, currentAnteData.ante, 'wraith')}
-                            {renderRoutableCardRow('Rare Tag Jokers', currentAnteData.pulls.rareTagJokers, currentAnteData.ante, 'rtag')}
-                            {renderRoutableCardRow('Uncommon Tag Jokers', currentAnteData.pulls.uncommonTagJokers, currentAnteData.ante, 'utag')}
-                            {renderRoutableCardRow('Riff-Raff Jokers', currentAnteData.pulls.riffRaffJokers, currentAnteData.ante, 'riff')}
-                            {renderRoutableCardRow('Emperor Tarots', currentAnteData.pulls.emperorTarots, currentAnteData.ante, 'emp')}
-                            {renderRoutableCardRow('Purple Seal / 8-Ball Tarots', currentAnteData.pulls.purpleSealTarots, currentAnteData.ante, 'pseal')}
-                            {renderRoutableCardRow('Sixth Sense Spectrals', currentAnteData.pulls.sixthSenseSpectrals, currentAnteData.ante, 'sixth')}
-                            {renderRoutableCardRow('Séance Spectrals', currentAnteData.pulls.seanceSpectrals, currentAnteData.ante, 'seance')}
-                          </div>
-                        )}
-
-                        {/* SUB-TAB C: SHOP SOURCE STREAMS */}
-                        {analyzerSubTab === 'streams' && (
-                          <div className="flex flex-col gap-3">
-                            {renderRoutableCardRow('Shop Jokers (All)', currentAnteData.shopStreams.shopJokers, currentAnteData.ante, 'sj')}
-                            {renderRoutableCardRow('Rare Shop Jokers', currentAnteData.shopStreams.rareShopJokers, currentAnteData.ante, 'srj')}
-                            {renderRoutableCardRow('Uncommon Shop Jokers', currentAnteData.shopStreams.uncommonShopJokers, currentAnteData.ante, 'suj')}
-                            {renderRoutableCardRow('Common Shop Jokers', currentAnteData.shopStreams.commonShopJokers, currentAnteData.ante, 'scj')}
-                            {renderRoutableCardRow('Shop Tarots', currentAnteData.shopStreams.shopTarots, currentAnteData.ante, 'st')}
-                            {renderRoutableCardRow('Shop Planets', currentAnteData.shopStreams.shopPlanets, currentAnteData.ante, 'sp')}
-                            {renderRoutableCardRow('Shop Spectrals', currentAnteData.shopStreams.shopSpectrals, currentAnteData.ante, 'ss')}
-                          </div>
-                        )}
-
-                        {/* SUB-TAB D: RNG EVENTS & ERRATIC DECK */}
-                        {analyzerSubTab === 'events' && (
-                          <div className="flex flex-col gap-3">
-                            <BalPanel
-                              title={`RNG Events (First 16 Rolls · ${simLuckKey} Luck)`}
-                              className="bg-[#36494d]/95"
-                            >
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 text-[13px]">
-                                {(
-                                  [
-                                    ['Lucky $20', analyzed.result.events.luckyMoney, '$', '#f5b841'],
-                                    ['Lucky +20 Mult', analyzed.result.events.luckyMult, 'M', '#fe5f55'],
-                                    ['Glass Break', analyzed.result.events.glass, '✕', '#009dff'],
-                                    ['Bloodstone', analyzed.result.events.bloodstone, '♥', '#fe5f55'],
-                                    ['Space Joker', analyzed.result.events.space, '★', '#13afce'],
-                                    ['Gros Michel Extinct', analyzed.result.events.grosMichel, '!', '#ff9800'],
-                                    ['Cavendish Extinct', analyzed.result.events.cavendish, '!', '#f5b841'],
-                                    ['Omen Globe Spectral', analyzed.result.events.omenGlobe, 'S', '#9e74ce'],
-                                  ] as const
-                                ).map(([label, arr, sym, color]) => (
-                                  <div
-                                    key={label}
-                                    className="rounded-[6px] border-2 border-[#162022] bg-[#223033] p-2.5"
-                                  >
-                                    <div style={{ color }} className="mb-1 text-[14px]">
-                                      {label}
-                                    </div>
-                                    <div className="font-mono text-[12px] tracking-widest text-white/95">
-                                      {arr
-                                        .slice(0, 16)
-                                        .map((hit) => (hit ? sym : '·'))
-                                        .join(' ')}
-                                    </div>
-                                  </div>
-                                ))}
-                                <div className="rounded-[6px] border-2 border-[#162022] bg-[#223033] p-2.5">
-                                  <div className="text-[#009dff] mb-1 text-[14px]">Misprint Mult</div>
-                                  <div className="font-mono text-[12px] tabular-nums text-white/95">
-                                    {Array.from(analyzed.result.events.misprint.slice(0, 12)).join(', ')}
-                                  </div>
-                                </div>
-                              </div>
-                            </BalPanel>
-
-                            {analyzed.result.erraticDeck && analyzed.result.erraticDeck.length > 0 && (
+                      {analyzerSubTab === 'events' && (
+                        <div className="flex flex-col gap-4">
+                          {analyzed.result.erraticDeck && analyzed.result.erraticDeck.length > 0 && (() => {
+                            const deckCards = analyzed.result.erraticDeck;
+                            const suitCounts: Record<number, number> = {
+                              [MotelyStandardcardSuit.Spades]: 0,
+                              [MotelyStandardcardSuit.Hearts]: 0,
+                              [MotelyStandardcardSuit.Diamonds]: 0,
+                              [MotelyStandardcardSuit.Clubs]: 0,
+                            };
+                            const rankCounts: Record<number, number> = {};
+                            for (const c of deckCards) {
+                              suitCounts[c.standardcardSuit] = (suitCounts[c.standardcardSuit] ?? 0) + 1;
+                              rankCounts[c.standardcardRank] = (rankCounts[c.standardcardRank] ?? 0) + 1;
+                            }
+                            const rankLabels: { rank: MotelyStandardcardRank; short: string }[] = [
+                              { rank: MotelyStandardcardRank.Ace, short: 'A' },
+                              { rank: MotelyStandardcardRank.King, short: 'K' },
+                              { rank: MotelyStandardcardRank.Queen, short: 'Q' },
+                              { rank: MotelyStandardcardRank.Jack, short: 'J' },
+                              { rank: MotelyStandardcardRank.Ten, short: '10' },
+                              { rank: MotelyStandardcardRank.Nine, short: '9' },
+                              { rank: MotelyStandardcardRank.Eight, short: '8' },
+                              { rank: MotelyStandardcardRank.Seven, short: '7' },
+                              { rank: MotelyStandardcardRank.Six, short: '6' },
+                              { rank: MotelyStandardcardRank.Five, short: '5' },
+                              { rank: MotelyStandardcardRank.Four, short: '4' },
+                              { rank: MotelyStandardcardRank.Three, short: '3' },
+                              { rank: MotelyStandardcardRank.Two, short: '2' },
+                            ];
+                            const suitRows = [
+                              { suit: MotelyStandardcardSuit.Spades, sym: '♠', label: 'Spades', color: '#c7d7da' },
+                              { suit: MotelyStandardcardSuit.Hearts, sym: '♥', label: 'Hearts', color: '#fe5f55' },
+                              { suit: MotelyStandardcardSuit.Diamonds, sym: '♦', label: 'Diamonds', color: '#ff9800' },
+                              { suit: MotelyStandardcardSuit.Clubs, sym: '♣', label: 'Clubs', color: '#4bc292' },
+                            ];
+                            return (
                               <BalPanel
                                 variant="felt"
-                                title={`Erratic Starting Deck (${analyzed.result.erraticDeck.length} cards)`}
+                                title={`Erratic Starting Deck (${deckCards.length} cards)`}
+                                className="flex flex-col gap-3"
                               >
+                                <div className="flex flex-col gap-2 rounded-[6px] bg-[#182426]/85 p-3">
+                                  <div className="flex flex-wrap items-center gap-3 text-[14px]">
+                                    <span className="text-[var(--j-text-muted)]">Suits</span>
+                                    {suitRows.map((s) => (
+                                      <span
+                                        key={s.label}
+                                        className="tabular-nums font-bold"
+                                        style={{ color: s.color }}
+                                      >
+                                        {s.sym} {suitCounts[s.suit] ?? 0}
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+                                    <span className="text-[var(--j-text-muted)] mr-1">Ranks</span>
+                                    {rankLabels.map((r) => {
+                                      const n = rankCounts[r.rank] ?? 0;
+                                      const cls =
+                                        n >= 8
+                                          ? 'text-[#4bc292] font-bold'
+                                          : n >= 6
+                                          ? 'text-[var(--j-gold)] font-bold'
+                                          : n === 0
+                                          ? 'text-white/30'
+                                          : 'text-white/85';
+                                      return (
+                                        <span key={r.short} className={`font-mono tabular-nums px-1 ${cls}`}>
+                                          {r.short}:{n}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                                 <div className="flex flex-wrap gap-1.5">
-                                  {analyzed.result.erraticDeck.map((card, idx) => (
-                                    <BalCard key={`erratic-${idx}`} item={card} width={46} />
+                                  {deckCards.map((card, idx) => (
+                                    <BalCard key={`erratic-${idx}`} item={card} width={48} />
                                   ))}
                                 </div>
                               </BalPanel>
-                            )}
+                            );
+                          })()}
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 text-[13px]">
+                            {(
+                              [
+                                ['Lucky $20', analyzed.result.events.luckyMoney, '$', '#f5b841'],
+                                ['Lucky +20 Mult', analyzed.result.events.luckyMult, 'M', '#fe5f55'],
+                                ['Glass Break', analyzed.result.events.glass, '✕', '#009dff'],
+                                ['Bloodstone', analyzed.result.events.bloodstone, '♥', '#fe5f55'],
+                                ['Space Joker', analyzed.result.events.space, '★', '#13afce'],
+                                ['Business Card ($2)', analyzed.result.events.business, '$', '#4bc292'],
+                                ['Reserved Parking', analyzed.result.events.parking, 'P', '#f5b841'],
+                                ['8 Ball Tarot', analyzed.result.events.eightBall, '8', '#9e74ce'],
+                                ['Gros Michel Extinct', analyzed.result.events.grosMichel, '!', '#ff9800'],
+                                ['Cavendish Extinct', analyzed.result.events.cavendish, '!', '#f5b841'],
+                                ['Omen Globe Spectral', analyzed.result.events.omenGlobe, 'S', '#9e74ce'],
+                                ['The Wheel (Face-Down)', analyzed.result.events.theWheel, '?', '#b7c7ca'],
+                              ] as const
+                            ).map(([label, arr, sym, color]) => (
+                              <div
+                                key={label}
+                                className="rounded-[6px] border border-white/10 bg-[#182426]/85 p-3"
+                              >
+                                <div style={{ color }} className="mb-1 text-[14px]">
+                                  {label}
+                                </div>
+                                <div className="font-mono text-[12px] tracking-widest text-white/90 break-words">
+                                  {arr
+                                    .slice(0, 32)
+                                    .map((triggered) => (triggered ? sym : '·'))
+                                    .join(' ')}
+                                </div>
+                              </div>
+                            ))}
+                            <div className="rounded-[6px] border border-white/10 bg-[#182426]/85 p-3">
+                              <div className="text-[#d5b8ff] mb-1 text-[14px]">
+                                Wheel of Fortune (F/H/P)
+                              </div>
+                              <div className="font-mono text-[12px] tracking-widest text-white/90 break-words">
+                                {Array.from(analyzed.result.events.wheelOfFortune.slice(0, 32))
+                                  .map((ed) =>
+                                    ed === MotelyItemEdition.Foil
+                                      ? 'F'
+                                      : ed === MotelyItemEdition.Holographic
+                                      ? 'H'
+                                      : ed === MotelyItemEdition.Polychrome
+                                      ? 'P'
+                                      : '·'
+                                  )
+                                  .join(' ')}
+                              </div>
+                            </div>
+                            <div className="rounded-[6px] border border-white/10 bg-[#182426]/85 p-3">
+                              <div className="text-[var(--j-blue)] mb-1 text-[14px]">Misprint Mult</div>
+                              <div className="font-mono text-[12px] tabular-nums text-white/90 break-words">
+                                {Array.from(analyzed.result.events.misprint.slice(0, 24)).join(', ')}
+                              </div>
+                            </div>
                           </div>
-                        )}
-                      </>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center p-8 text-[var(--j-text-muted)]">
+                  Enter any Balatro seed on the left to inspect its full deterministic table.
+                </div>
+              )}
+
+              {/* Quiet Sticky Route Footer (only appears when user pinned ≥1 card and isn't on Guide) */}
+              {routePicks.length > 0 && analyzed && analyzerSubTab !== 'guide' && (
+                <div className="shrink-0 border-t border-white/10 bg-[#182426]/95 px-5 py-2 flex flex-wrap items-center justify-between gap-2 text-[13px]">
+                  <span className="text-[var(--j-gold)] tabular-nums">
+                    {routePicks.length} card{routePicks.length === 1 ? '' : 's'} pinned to Run Route
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <BalButton
+                      tone="blue"
+                      size="xs"
+                      onClick={() => {
+                        playCardClick(1.1);
+                        setAnalyzerSubTab('guide');
+                      }}
+                    >
+                      <Route size={13} />
+                      <span>Open Guide</span>
+                    </BalButton>
+                    <BalButton
+                      tone={copiedKey === 'route' ? 'green' : 'slate'}
+                      size="xs"
+                      onClick={() => {
+                        const md = [
+                          `# Balatro Seed Route: ${analyzed.seed} (${analyzed.deck} / ${analyzed.stake})`,
+                          ...routePicks.map(
+                            (p) =>
+                              `- **Ante ${p.ante}** · ${p.location}: ${p.name}${p.edition ? ` (${p.edition})` : ''}`
+                          ),
+                        ].join('\n');
+                        copyWithFeedback('route', md);
+                      }}
+                    >
+                      <span>{copiedKey === 'route' ? 'Copied!' : 'Copy Markdown'}</span>
+                    </BalButton>
+                    <BalButton
+                      tone="red"
+                      size="xs"
+                      onClick={() => {
+                        playCardClick(0.8);
+                        setRoutePicks([]);
+                      }}
+                    >
+                      Clear
+                    </BalButton>
+                  </div>
+                </div>
+              )}
+            </main>
+          </div>
+        )}
+
+        {/* ================================================================
+         * VIEW 2: STREAMLINED JAML SEARCH PARTY (Clean Rail + Single Bar)
+         * ================================================================ */}
+        {activeTab === 'search' && (
+          <div className="relative z-10 flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+            {/* LEFT SEARCH PARTY RAIL */}
+            <aside className="lg:w-[288px] shrink-0 flex flex-col gap-3 p-3.5 border-b lg:border-b-0 lg:border-r border-white/10 bg-[#182426]/88 backdrop-blur-sm overflow-y-auto">
+              {/* Dominant Single Primary CTA */}
+              {!isSearching ? (
+                <BalButton
+                  tone="green"
+                  size="lg"
+                  block
+                  disabled={Boolean(validationError)}
+                  disabledReason={validationError ?? undefined}
+                  onClick={startSearch}
+                >
+                  <Play size={16} fill="currentColor" />
+                  <span>{searchMode === 'seedlist' ? 'Test Seed List' : 'Start Search'}</span>
+                </BalButton>
+              ) : (
+                <BalButton tone="red" size="lg" block onClick={stopSearch}>
+                  <Square size={15} fill="currentColor" />
+                  <span>Stop Search</span>
+                </BalButton>
+              )}
+
+              {/* Iconic Balatro Score Readout */}
+              <BalChipCounter
+                leftLabel="Seeds"
+                leftValue={searchedCount.toLocaleString()}
+                rightLabel="Seeds/s"
+                rightValue={speedPerSec.toLocaleString()}
+                footerLeft={isSearching ? 'Scanning WASM…' : 'Ready'}
+                footerRight={`${results.length} / ${maxMatches} found`}
+              />
+
+              {/* Clean Run & Search Config */}
+              <div className="flex flex-col gap-3 pt-1">
+                <BalSelect
+                  label="Preset"
+                  items={PRESET_SELECT_ITEMS}
+                  value={presetId}
+                  onChange={handlePresetChange}
+                />
+
+                <BalCycle
+                  label="Deck"
+                  options={DECK_CYCLE_OPTIONS}
+                  value={deck}
+                  onChange={handleDeckChange}
+                  tone="blue"
+                  pips={false}
+                />
+
+                <BalCycle
+                  label="Stake"
+                  options={STAKE_CYCLE_OPTIONS}
+                  value={stake}
+                  onChange={handleStakeChange}
+                  tone="red"
+                  pips
+                />
+
+                <BalSelect
+                  label="Search Mode"
+                  items={SEARCH_MODE_ITEMS}
+                  value={searchMode}
+                  onChange={(v) => {
+                    playCardClick();
+                    setSearchMode(v);
+                  }}
+                />
+
+                {searchMode === 'aesthetic' && (
+                  <BalSelect
+                    label="Aesthetic Pattern"
+                    items={AESTHETIC_ITEMS}
+                    value={aestheticName}
+                    onChange={setAestheticName}
+                  />
+                )}
+
+                {searchMode === 'keyword' && (
+                  <BalInput
+                    label="Keywords"
+                    mono
+                    value={keywordsText}
+                    onChange={(e) => setKeywordsText(e.target.value)}
+                    placeholder="JIMBO, PERKEO, WEE"
+                  />
+                )}
+
+                {searchMode === 'seedlist' && (
+                  <BalTextArea
+                    label="Seeds to Test"
+                    rows={3}
+                    value={seedListText}
+                    onChange={(e) => setSeedListText(e.target.value.toUpperCase())}
+                    placeholder="ALEEB, 2K9H9HN, 7LB2WVPK"
+                  />
+                )}
+
+                <BalSlider
+                  label="Stop After Matches"
+                  tone="orange"
+                  min={1}
+                  max={25}
+                  step={1}
+                  value={maxMatches}
+                  onChange={setMaxMatches}
+                />
+              </div>
+
+              <div className="mt-auto pt-3 border-t border-white/10 grid grid-cols-2 gap-2">
+                <BalButton
+                  tone="slate"
+                  size="xs"
+                  block
+                  onClick={() => {
+                    playCardClick(1.04);
+                    setSettingsOpen(true);
+                  }}
+                >
+                  <Settings2 size={13} />
+                  <span>Options</span>
+                </BalButton>
+                <BalButton
+                  tone="purple"
+                  size="xs"
+                  block
+                  onClick={() => {
+                    playCardClick(1.08);
+                    setGuideOpen(true);
+                  }}
+                >
+                  <HelpCircle size={13} />
+                  <span>JAML Docs</span>
+                </BalButton>
+              </div>
+            </aside>
+
+            {/* RIGHT FILTER STUDIO & LIVE MATCHED SEEDS */}
+            <main className="flex-1 min-w-0 min-h-0 overflow-y-auto px-5 py-5 lg:px-7 flex flex-col gap-5">
+              {/* SINGLE CLEAN STUDIO TOOLBAR (replaces 4 stacked rows) */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex items-center gap-1 rounded-[7px] bg-[#182426]/90 p-1 border border-white/10">
+                    {(
+                      [
+                        ['visual', 'Visual', LayoutGrid],
+                        ['split', 'Split', Columns2],
+                        ['code', 'Code', Code2],
+                      ] as const
+                    ).map(([mode, label, Icon]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setEditorLayout(mode)}
+                        className={`inline-flex items-center gap-1.5 rounded-[5px] px-2.5 py-1 text-[13px] cursor-pointer transition-colors ${
+                          editorLayout === mode
+                            ? 'bg-[var(--j-orange)] text-white'
+                            : 'text-[var(--j-text-muted)] hover:text-white'
+                        }`}
+                      >
+                        <Icon size={13} />
+                        <span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <BalButton
+                    tone="slate"
+                    size="xs"
+                    onClick={handleToggleFormat}
+                    disabled={Boolean(validationError)}
+                    disabledReason={validationError ?? undefined}
+                  >
+                    {editorMode === 'yaml' ? 'YAML → JSON' : 'JSON → YAML'}
+                  </BalButton>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {embeddedJamlSeeds.length > 0 && (
+                    <BalButton tone="green" size="xs" onClick={handleOpenEmbeddedSeedsInAnalyzer}>
+                      <MapIcon size={13} />
+                      <span>Explore {embeddedJamlSeeds.length} Seeds</span>
+                    </BalButton>
+                  )}
+                  <BalButton
+                    tone="blue"
+                    size="xs"
+                    disabled={Boolean(validationError)}
+                    disabledReason={validationError ?? undefined}
+                    onClick={handleCleanupFilter}
+                  >
+                    <Eraser size={13} />
+                    <span>Clean</span>
+                  </BalButton>
+                  <BalButton tone="gold" size="xs" onClick={() => setSaveFilterOpen(true)}>
+                    <Save size={13} />
+                    <span>Save</span>
+                  </BalButton>
+                  <BalButton tone="slate" size="xs" onClick={handleExportJamlFile}>
+                    <Download size={13} />
+                    <span>Export</span>
+                  </BalButton>
+                </div>
+              </div>
+
+              {cleanupNotice && (
+                <div className="text-[13px] text-[#7be0b4]">{cleanupNotice}</div>
+              )}
+
+              {/* Split / Visual / Code Workspace */}
+              <div
+                className={`grid gap-4 ${
+                  editorLayout === 'split' ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1'
+                }`}
+              >
+                {editorLayout !== 'code' && (
+                  <BalPanel
+                    title={`Filter Rules (${clauseCards.length})`}
+                    rightSlot={
+                      clauseCards.length > 0 ? (
+                        <BalButton tone="red" size="xs" onClick={handleClearAllClauses}>
+                          <Trash2 size={12} />
+                          <span>Clear</span>
+                        </BalButton>
+                      ) : undefined
+                    }
+                    className="flex flex-col gap-3"
+                  >
+                    {clauseCards.length === 0 ? (
+                      <div className="rounded-[6px] border border-dashed border-white/20 p-4 flex flex-col items-center gap-2.5 text-center text-[14px] text-[var(--j-text-muted)]">
+                        <span>No rules yet — pick a starter or compose one below.</span>
+                        <div className="flex flex-wrap justify-center gap-1.5">
+                          {QUICK_CLAUSES.map((clause) => (
+                            <BalButton
+                              key={clause.label}
+                              tone={clause.tone}
+                              size="xs"
+                              onClick={() => handleQuickAdd(clause)}
+                            >
+                              {clause.label}
+                            </BalButton>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2">
+                        {clauseCards.map((item) => (
+                          <ClauseDeckCard
+                            key={`${item.section}-${item.index}-${item.primaryKey}-${item.targetText}`}
+                            item={item}
+                            onRemove={() => {
+                              playCardClick(0.8);
+                              commitFilterUpdate((f) =>
+                                removeClauseFromFilter(f, item.section, item.index)
+                              );
+                            }}
+                            onDuplicate={() => {
+                              playCardClick(1.1);
+                              commitFilterUpdate((f) =>
+                                duplicateClauseInFilter(f, item.section, item.index)
+                              );
+                            }}
+                            onMoveSection={(nextSec) => {
+                              playCardClick(1.15);
+                              commitFilterUpdate((f) =>
+                                moveClauseBetweenSections(f, item.section, item.index, nextSec)
+                              );
+                            }}
+                            onUpdate={(nextSec, nextClause) => {
+                              commitFilterUpdate((f) =>
+                                updateClauseInFilter(
+                                  f,
+                                  item.section,
+                                  item.index,
+                                  nextSec,
+                                  nextClause
+                                )
+                              );
+                            }}
+                          />
+                        ))}
+                      </div>
                     )}
-                  </>
+
+                    {/* Compact Rule Composer */}
+                    <BalPanel variant="inset" className="flex flex-col gap-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <BalSelect<ClauseSection>
+                          label="Rule"
+                          items={CLAUSE_SECTION_ITEMS}
+                          value={clauseSection}
+                          onChange={setClauseSection}
+                        />
+                        <BalSelect<ClauseKind>
+                          label="Category"
+                          items={CLAUSE_KIND_ITEMS}
+                          value={clauseKind}
+                          onChange={(nextKind) => {
+                            setClauseKind(nextKind);
+                            setClauseItem(JAML_CLAUSE_ITEMS[nextKind][0].value);
+                          }}
+                        />
+                        <BalSelect
+                          label="Target"
+                          items={clauseItemOptions}
+                          value={clauseItem}
+                          onChange={setClauseItem}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 items-end">
+                        {clauseKind === 'erraticRank' ? (
+                          <BalSlider
+                            label="Min in Deck"
+                            tone="gold"
+                            min={6}
+                            max={16}
+                            value={Math.max(6, Math.min(16, clauseWeight))}
+                            onChange={setClauseWeight}
+                          />
+                        ) : (
+                          <BalSelect
+                            label="Antes"
+                            items={ANTE_RANGE_PRESETS.map((p) => ({
+                              value: p.value,
+                              label: p.label,
+                            }))}
+                            value={clauseAnteKey}
+                            onChange={setClauseAnteKey}
+                          />
+                        )}
+
+                        {(clauseKind === 'joker' ||
+                          clauseKind === 'legendaryJoker' ||
+                          clauseKind === 'rareJoker') && (
+                          <BalSelect
+                            label="Edition"
+                            items={EDITION_ITEMS}
+                            value={clauseEdition}
+                            onChange={setClauseEdition}
+                          />
+                        )}
+
+                        {(clauseKind === 'joker' ||
+                          clauseKind === 'rareJoker' ||
+                          clauseKind === 'legendaryJoker' ||
+                          clauseKind === 'tarotCard' ||
+                          clauseKind === 'spectralCard') && (
+                          <BalSelect<SourcePresetKey>
+                            label="Source"
+                            items={SOURCE_PRESET_ITEMS}
+                            value={clauseSourceKey}
+                            onChange={setClauseSourceKey}
+                          />
+                        )}
+
+                        {clauseSection === 'should' && clauseKind !== 'erraticRank' && (
+                          <BalSlider
+                            label="Weight"
+                            tone="gold"
+                            min={1}
+                            max={25}
+                            value={clauseWeight}
+                            onChange={setClauseWeight}
+                          />
+                        )}
+
+                        <BalButton tone="green" size="sm" block onClick={handleInsertComposedClause}>
+                          <Plus size={14} />
+                          <span>Add Rule</span>
+                        </BalButton>
+                      </div>
+                    </BalPanel>
+                  </BalPanel>
+                )}
+
+                {editorLayout !== 'visual' && (
+                  <BalPanel
+                    title={editorMode === 'yaml' ? 'JAML (YAML)' : 'JAML (JSON)'}
+                    rightSlot={
+                      <BalButton
+                        tone="slate"
+                        size="xs"
+                        onClick={() => setUseMonacoOnMobile((v) => !v)}
+                      >
+                        {useMonacoOnMobile ? 'Plain' : 'Monaco'}
+                      </BalButton>
+                    }
+                    className="flex flex-col gap-2"
+                  >
+                    {useMonacoOnMobile ? (
+                      <Suspense
+                        fallback={
+                          <div className="flex items-center justify-center gap-2 rounded-[6px] bg-[#151f21] h-[320px] text-[14px] text-[var(--j-text-muted)]">
+                            <Loader2 size={16} className="animate-spin text-[var(--j-gold)]" />
+                            <span>Loading JAML Editor…</span>
+                          </div>
+                        }
+                      >
+                        <LazyJamlMonacoEditor
+                          value={jaml}
+                          language={editorMode}
+                          error={validationError}
+                          height={editorLayout === 'code' ? 400 : 320}
+                          onChange={setJaml}
+                        />
+                      </Suspense>
+                    ) : (
+                      <BalTextArea
+                        aria-label="JAML Filter Code"
+                        rows={13}
+                        spellCheck={false}
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        value={jaml}
+                        onChange={(e) => setJaml(e.target.value)}
+                        error={null}
+                      />
+                    )}
+
+                    {validationError ? (
+                      <div className="rounded-[6px] border border-[var(--j-red)] bg-[var(--j-red)]/20 px-3 py-1.5 text-[13px] text-white">
+                        {validationError}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between text-[13px] text-[#7be0b4]">
+                        <span>Valid JAML</span>
+                        <span className="text-[var(--j-text-muted)]">
+                          {deck} · {stake}
+                        </span>
+                      </div>
+                    )}
+
+                    {searchError && (
+                      <div className="rounded-[6px] border border-[var(--j-red)] bg-[var(--j-red)]/25 px-3 py-1.5 text-[13px] text-white">
+                        {searchError}
+                      </div>
+                    )}
+                  </BalPanel>
                 )}
               </div>
-            )}
 
-            {/* TAB 3: SEED VAULT & SAVED JAML FILTERS */}
-            {activeTab === 'vault' && (
-              <div className="flex flex-col gap-3">
-                <BalPanel
-                  title={`Bookmarked God Seeds (${savedSeeds.length})`}
-                  variant="felt"
-                  className="flex flex-col gap-2.5"
-                >
-                  {savedSeeds.length === 0 ? (
-                    <div className="py-8 text-center text-[#c7dcd3] text-[16px]">
-                      No bookmarked seeds yet. Save any found or analyzed seed to keep it in your vault.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                      {savedSeeds.map((entry) => (
+              {/* MATCHED SEEDS */}
+              <section className="flex flex-col gap-3">
+                <div className="flex items-baseline justify-between">
+                  <h2 className="m-0 text-[20px] text-white [text-shadow:1px_1px_0_rgba(0,0,0,0.8)]">
+                    Matched Seeds ({results.length})
+                  </h2>
+                  <span className="text-[13px] text-[var(--j-text-muted)]">
+                    Ante 1 previews stream live during search
+                  </span>
+                </div>
+
+                {results.length === 0 ? (
+                  <div className="rounded-[10px] border border-white/10 bg-[#173a2e]/45 py-10 px-4 flex flex-col items-center justify-center text-center text-[var(--j-text-muted)] gap-2">
+                    <Search size={24} className="opacity-70" />
+                    <span className="text-[16px]">
+                      {isSearching
+                        ? 'Scanning seeds in Motely WASM…'
+                        : 'Press Start Search to find matching seeds.'}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    {results.map((result) => {
+                      const ante1 = result.rider?.antes.find((a) => a.ante === 1);
+                      const previewShop = ante1 ? ante1.shopItems.slice(0, 5) : [];
+                      const legendaries = result.rider?.legendaryOrder.slice(0, 3) ?? [];
+                      const saved = isSeedSaved(result.seed, deck);
+
+                      return (
                         <div
-                          key={entry.id}
-                          className="flex flex-col gap-1.5 rounded-[8px] border-2 border-[#162022] bg-[#223033]/95 p-3"
+                          key={result.seed}
+                          className="rounded-[10px] border border-white/15 bg-[#182426]/90 p-3.5 flex flex-col gap-2.5"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="font-mono text-[18px] font-semibold tracking-widest text-white truncate">
-                                {entry.seed}
+                            <div className="flex items-baseline gap-2.5 min-w-0">
+                              <span className="font-mono text-[20px] tracking-widest text-white truncate">
+                                {result.seed}
                               </span>
-                              <span className="text-[12px] text-[#68d1ff]">
-                                {entry.deck} · {entry.stake}
-                              </span>
-                              {entry.score > 0 && (
-                                <span className="text-[12px] text-[#f5b841] tabular-nums">
-                                  +{entry.score}
+                              {result.score > 0 && (
+                                <span className="text-[13px] text-[var(--j-gold)] tabular-nums">
+                                  +{result.score}
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-1 shrink-0">
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <BalButton
+                                tone={saved ? 'gold' : 'slate'}
+                                size="xs"
+                                aria-label={saved ? 'Remove from Vault' : 'Save to Vault'}
+                                onClick={() =>
+                                  toggleBookmarkSeed(result.seed, deck, stake, result.score, result.rider)
+                                }
+                              >
+                                {saved ? <BookmarkCheck size={13} /> : <Bookmark size={13} />}
+                              </BalButton>
+                              <BalButton
+                                tone="green"
+                                size="xs"
+                                onClick={() => {
+                                  playCardClick(1.12);
+                                  analyzeSeedNow(result.seed, deck, stake, undefined, true);
+                                  setAnalyzerSubTab('shop');
+                                  setActiveTab('analyzer');
+                                }}
+                              >
+                                Explore
+                              </BalButton>
                               <BalButton
                                 tone="purple"
                                 size="xs"
                                 onClick={() => {
                                   playCardClick(1.15);
-                                  setDeck(entry.deck);
-                                  setStake(entry.stake);
-                                  analyzeSeedNow(entry.seed, entry.deck, entry.stake, undefined, true);
+                                  analyzeSeedNow(result.seed, deck, stake, undefined, true);
                                   setAnalyzerSubTab('card');
                                   setActiveTab('analyzer');
                                 }}
@@ -3588,138 +3444,435 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                                 Card
                               </BalButton>
                               <BalButton
-                                tone="blue"
+                                tone={copiedKey === result.seed ? 'green' : 'orange'}
                                 size="xs"
-                                onClick={() => {
-                                  playCardClick(1.1);
-                                  setDeck(entry.deck);
-                                  setStake(entry.stake);
-                                  analyzeSeedNow(entry.seed, entry.deck, entry.stake, undefined, true);
-                                  setAnalyzerSubTab('shop');
-                                  setActiveTab('analyzer');
-                                }}
+                                aria-label={`Copy ${result.seed}`}
+                                onClick={() => copyWithFeedback(result.seed, result.seed)}
                               >
-                                Inspect
-                              </BalButton>
-                              <BalButton
-                                tone={copiedKey === entry.seed ? 'green' : 'orange'}
-                                size="xs"
-                                onClick={() => copyWithFeedback(entry.seed, entry.seed)}
-                              >
-                                {copiedKey === entry.seed ? <Check size={13} /> : <Copy size={13} />}
-                              </BalButton>
-                              <BalButton
-                                tone="red"
-                                size="xs"
-                                aria-label="Delete saved seed"
-                                onClick={() => {
-                                  playCardClick(0.8);
-                                  setSavedSeeds((prev) => prev.filter((s) => s.id !== entry.id));
-                                }}
-                              >
-                                <Trash2 size={13} />
+                                {copiedKey === result.seed ? <Check size={13} /> : <Copy size={13} />}
                               </BalButton>
                             </div>
                           </div>
 
-                          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-[#b7c7ca]">
-                            {entry.bossAnte1 && (
-                              <span>
-                                Boss: <span className="text-[#fe5f55]">{entry.bossAnte1}</span>
+                          {ante1 && (
+                            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[13px] text-[var(--j-text-muted)]">
+                              <span className="text-[var(--j-red)]">
+                                {decodeBossName(ante1.boss)}
                               </span>
-                            )}
-                            {entry.voucherAnte1 && (
-                              <span>
-                                Voucher: <span className="text-[#f5b841]">{entry.voucherAnte1}</span>
+                              <span>·</span>
+                              <span className="text-[var(--j-gold)]">
+                                {decodeVoucherName(ante1.voucher)}
                               </span>
-                            )}
-                            {entry.legendaries.length > 0 && (
-                              <span className="text-[#c8a6f5]">
-                                Souls: {entry.legendaries.join(', ')}
-                              </span>
-                            )}
-                            <span className="ml-auto opacity-70">{entry.savedAt}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </BalPanel>
+                              {legendaries.length > 0 && (
+                                <>
+                                  <span>·</span>
+                                  <span className="text-[#d5b8ff]">
+                                    {legendaries
+                                      .map((l) => `${decodeJokerEnumName(l.joker)} A${l.ante}`)
+                                      .join(', ')}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          )}
 
-                <BalPanel
-                  title={`Saved Custom JAML Filters (${savedFilters.length})`}
-                  className="flex flex-col gap-2.5 bg-[#36494d]/95"
-                >
-                  {savedFilters.length === 0 ? (
-                    <div className="py-6 text-center text-[#b7c7ca] text-[15px]">
-                      Name and click &quot;Save&quot; in the JAML Studio bar to store reusable filter recipes here.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                      {savedFilters.map((flt) => (
-                        <div
-                          key={flt.id}
-                          className="flex flex-col gap-2 rounded-[8px] border-2 border-[#162022] bg-[#223033] p-3"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="text-[16px] text-white truncate">{flt.name}</div>
-                              <div className="text-[12px] text-[#b7c7ca]">
-                                {flt.deck} Deck · {flt.stake} Stake · {flt.savedAt}
-                              </div>
+                          {previewShop.length > 0 && (
+                            <div className="flex flex-wrap gap-2 pt-2 border-t border-white/10">
+                              {previewShop.map((item, idx) => (
+                                <BalCard
+                                  key={`${result.seed}-p-${idx}`}
+                                  item={item}
+                                  index={idx}
+                                  width={52}
+                                />
+                              ))}
                             </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <BalButton
-                                tone="green"
-                                size="xs"
-                                onClick={() => {
-                                  playCardClick(1.1);
-                                  setDeck(flt.deck);
-                                  setStake(flt.stake);
-                                  setEditorMode('yaml');
-                                  setJaml(flt.yaml);
-                                  setActiveTab('search');
-                                }}
-                              >
-                                Load
-                              </BalButton>
-                              <BalButton
-                                tone="red"
-                                size="xs"
-                                aria-label="Delete saved filter"
-                                onClick={() => {
-                                  playCardClick(0.8);
-                                  setSavedFilters((prev) => prev.filter((f) => f.id !== flt.id));
-                                }}
-                              >
-                                <Trash2 size={13} />
-                              </BalButton>
-                            </div>
-                          </div>
-                          <pre className="max-h-[96px] overflow-hidden rounded-[5px] bg-[#151f21] p-2 font-mono text-[11px] text-[#b7c7ca]">
-                            {flt.yaml}
-                          </pre>
+                          )}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </BalPanel>
-              </div>
-            )}
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </main>
           </div>
-        </main>
+        )}
+
+        {/* ================================================================
+         * VIEW 3: VAULT (Bookmarked Seeds & Saved JAML Recipes)
+         * ================================================================ */}
+        {activeTab === 'vault' && (
+          <main className="relative z-10 flex-1 min-h-0 overflow-y-auto px-5 py-6 lg:px-10">
+            <div className="max-w-[1100px] mx-auto flex flex-col gap-7">
+              <section className="flex flex-col gap-3">
+                <h2 className="m-0 text-[22px] text-white [text-shadow:1px_1px_0_rgba(0,0,0,0.8)]">
+                  Saved Seeds ({savedSeeds.length})
+                </h2>
+                {savedSeeds.length === 0 ? (
+                  <div className="rounded-[10px] border border-white/10 bg-[#182426]/80 py-10 text-center text-[var(--j-text-muted)]">
+                    Save any seed in Explorer or Search Party to keep it here.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {savedSeeds.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="rounded-[10px] border border-white/15 bg-[#182426]/90 p-3.5 flex flex-col gap-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-baseline gap-2.5 min-w-0">
+                            <span className="font-mono text-[20px] tracking-widest text-white truncate">
+                              {entry.seed}
+                            </span>
+                            <span className="text-[13px] text-[var(--j-text-muted)]">
+                              {entry.deck} · {entry.stake}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <BalButton
+                              tone="green"
+                              size="xs"
+                              onClick={() => {
+                                playCardClick(1.1);
+                                setDeck(entry.deck);
+                                setStake(entry.stake);
+                                analyzeSeedNow(entry.seed, entry.deck, entry.stake, undefined, true);
+                                setAnalyzerSubTab('shop');
+                                setActiveTab('analyzer');
+                              }}
+                            >
+                              Open
+                            </BalButton>
+                            <BalButton
+                              tone="purple"
+                              size="xs"
+                              onClick={() => {
+                                playCardClick(1.15);
+                                setDeck(entry.deck);
+                                setStake(entry.stake);
+                                analyzeSeedNow(entry.seed, entry.deck, entry.stake, undefined, true);
+                                setAnalyzerSubTab('card');
+                                setActiveTab('analyzer');
+                              }}
+                            >
+                              Card
+                            </BalButton>
+                            <BalButton
+                              tone={copiedKey === entry.seed ? 'green' : 'orange'}
+                              size="xs"
+                              aria-label={`Copy ${entry.seed}`}
+                              onClick={() => copyWithFeedback(entry.seed, entry.seed)}
+                            >
+                              {copiedKey === entry.seed ? <Check size={13} /> : <Copy size={13} />}
+                            </BalButton>
+                            <BalButton
+                              tone="red"
+                              size="xs"
+                              aria-label="Delete saved seed"
+                              onClick={() => {
+                                playCardClick(0.8);
+                                setSavedSeeds((prev) => prev.filter((s) => s.id !== entry.id));
+                              }}
+                            >
+                              <Trash2 size={13} />
+                            </BalButton>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[13px] text-[var(--j-text-muted)]">
+                          {entry.bossAnte1 && (
+                            <span className="text-[var(--j-red)]">{entry.bossAnte1}</span>
+                          )}
+                          {entry.voucherAnte1 && (
+                            <>
+                              <span>·</span>
+                              <span className="text-[var(--j-gold)]">{entry.voucherAnte1}</span>
+                            </>
+                          )}
+                          {entry.legendaries.length > 0 && (
+                            <>
+                              <span>·</span>
+                              <span className="text-[#d5b8ff]">{entry.legendaries.join(', ')}</span>
+                            </>
+                          )}
+                          <span className="ml-auto opacity-70">{entry.savedAt}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="flex flex-col gap-3">
+                <h2 className="m-0 text-[22px] text-white [text-shadow:1px_1px_0_rgba(0,0,0,0.8)]">
+                  Saved JAML Filters ({savedFilters.length})
+                </h2>
+                {savedFilters.length === 0 ? (
+                  <div className="rounded-[10px] border border-white/10 bg-[#182426]/80 py-8 text-center text-[var(--j-text-muted)]">
+                    Click Save in the Search Party toolbar to store reusable recipes.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {savedFilters.map((flt) => (
+                      <div
+                        key={flt.id}
+                        className="rounded-[10px] border border-white/15 bg-[#182426]/90 p-3.5 flex flex-col gap-2"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-[16px] text-white truncate">{flt.name}</div>
+                            <div className="text-[12px] text-[var(--j-text-muted)]">
+                              {flt.deck} Deck · {flt.stake} Stake · {flt.savedAt}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <BalButton
+                              tone="green"
+                              size="xs"
+                              onClick={() => {
+                                playCardClick(1.1);
+                                setDeck(flt.deck);
+                                setStake(flt.stake);
+                                setEditorMode('yaml');
+                                setJaml(flt.yaml);
+                                setActiveTab('search');
+                              }}
+                            >
+                              Load
+                            </BalButton>
+                            <BalButton
+                              tone="red"
+                              size="xs"
+                              aria-label="Delete saved filter"
+                              onClick={() => {
+                                playCardClick(0.8);
+                                setSavedFilters((prev) => prev.filter((f) => f.id !== flt.id));
+                              }}
+                            >
+                              <Trash2 size={13} />
+                            </BalButton>
+                          </div>
+                        </div>
+                        <pre className="max-h-[96px] overflow-hidden rounded-[6px] bg-[#121b1d] p-2.5 font-mono text-[11px] text-[var(--j-text-muted)]">
+                          {flt.yaml}
+                        </pre>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </main>
+        )}
       </div>
 
-      {/* LIVE @vercel/og SOCIAL CARD & SHARE STUDIO MODAL */}
+      {/* Official Balatro Community Attribution Banner */}
+      <AttributionBanner />
+
+      {/* DIALOG: RUN MODIFIERS & ENDLESS DEPTH (keeps Explorer screen serene!) */}
+      <BalDialog
+        open={simPanelOpen}
+        onClose={() => setSimPanelOpen(false)}
+        title="Run Modifiers & Endless Depth"
+        description="Simulate held vouchers, Showman, Souls, Luck, and Endless Antes"
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] text-[var(--j-text-muted)]">Ante Scan Depth</span>
+            <div className="grid grid-cols-4 gap-2">
+              {ANTE_DEPTH_OPTIONS.map((depth) => (
+                <BalButton
+                  key={depth}
+                  tone={analyzerMaxAnte === depth ? 'gold' : 'slate'}
+                  size="sm"
+                  block
+                  active={analyzerMaxAnte === depth}
+                  onClick={() => {
+                    if (analyzerMaxAnte === depth) return;
+                    playRerollSweep();
+                    setAnalyzerMaxAnte(depth);
+                    if (analyzed) {
+                      analyzeSeedNow(
+                        analyzed.seed,
+                        analyzed.deck,
+                        analyzed.stake,
+                        undefined,
+                        false,
+                        depth
+                      );
+                    }
+                  }}
+                >
+                  Ante {depth}
+                </BalButton>
+              ))}
+            </div>
+          </div>
+
+          <BalCycle
+            label="Luck"
+            options={LUCK_OPTIONS}
+            value={simLuckKey}
+            onChange={(val) => {
+              playCardClick(1.12);
+              setSimLuckKey(val);
+              reanalyzeWithSim(val, simShowman, simVouchers, simLegendaries);
+            }}
+            tone="green"
+            pips
+          />
+
+          <BalSwitch
+            label="Hold Showman (allow duplicate Jokers/Consumables)"
+            tone="purple"
+            checked={simShowman}
+            onChange={(checked) => {
+              playCardClick(1.1);
+              setSimShowman(checked);
+              reanalyzeWithSim(simLuckKey, checked, simVouchers, simLegendaries);
+            }}
+          />
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] text-[var(--j-text-muted)]">Held Soul Legendaries</span>
+            <div className="flex flex-wrap gap-1.5">
+              {LEGENDARY_JOKERS.map((leg) => {
+                const active = simLegendaries.includes(leg.key);
+                return (
+                  <BalButton
+                    key={leg.key}
+                    tone={active ? 'purple' : 'slate'}
+                    size="xs"
+                    active={active}
+                    onClick={() => toggleSimLegendary(leg.key)}
+                  >
+                    {active ? `✓ ${leg.label}` : leg.label}
+                  </BalButton>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] text-[var(--j-text-muted)]">Held Vouchers</span>
+            <div className="flex flex-wrap gap-1.5">
+              {SIM_VOUCHERS.map((v) => {
+                const active = simVouchers.includes(v.key);
+                return (
+                  <BalButton
+                    key={v.key}
+                    tone={active ? 'orange' : 'slate'}
+                    size="xs"
+                    active={active}
+                    onClick={() => toggleSimVoucher(v.key)}
+                  >
+                    {active ? `✓ ${v.label}` : v.label}
+                  </BalButton>
+                );
+              })}
+            </div>
+          </div>
+
+          {activeModSummary.length > 0 && (
+            <BalButton
+              tone="red"
+              size="sm"
+              block
+              onClick={() => {
+                playCardClick(0.85);
+                setSimLuckKey('X1');
+                setSimShowman(false);
+                setSimVouchers([]);
+                setSimLegendaries([]);
+                setAnalyzerMaxAnte(8);
+                if (analyzed) {
+                  analyzeSeedNow(analyzed.seed, analyzed.deck, analyzed.stake, {
+                    luck: MotelyLuck.X1,
+                    jokers: new Int32Array(0),
+                    vouchers: new Int32Array(0),
+                  }, false, 8);
+                }
+              }}
+            >
+              Reset All Modifiers
+            </BalButton>
+          )}
+        </div>
+      </BalDialog>
+
+      {/* DIALOG: SEARCH PARTY OPTIONS */}
+      <BalDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        title="Search & Interface Options"
+      >
+        <div className="flex flex-col gap-3">
+          <BalSwitch
+            label="Auto-inspect first matched seed"
+            tone="green"
+            checked={autoAnalyzeFirst}
+            onChange={setAutoAnalyzeFirst}
+          />
+          <BalSwitch
+            label="Balatro sound FX"
+            tone="blue"
+            checked={sfxOn}
+            onChange={setSfxOn}
+          />
+          <BalSwitch
+            label="Reduce shader motion"
+            tone="purple"
+            checked={reducedMotion}
+            onChange={setReducedMotion}
+          />
+        </div>
+      </BalDialog>
+
+      {/* DIALOG: SAVE FILTER TO VAULT */}
+      <BalDialog
+        open={saveFilterOpen}
+        onClose={() => setSaveFilterOpen(false)}
+        title="Save Filter to Vault"
+        description="Store this JAML recipe locally for instant reuse"
+      >
+        <div className="flex flex-col gap-3">
+          <BalInput
+            label="Recipe Name"
+            value={saveFilterName}
+            onChange={(e) => setSaveFilterName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleSaveCurrentFilter();
+                setSaveFilterOpen(false);
+              }
+            }}
+            placeholder={`Custom Filter (${deck})`}
+          />
+          <BalButton
+            tone="green"
+            size="sm"
+            block
+            onClick={() => {
+              handleSaveCurrentFilter();
+              setSaveFilterOpen(false);
+            }}
+          >
+            <Save size={14} />
+            <span>Save Recipe</span>
+          </BalButton>
+        </div>
+      </BalDialog>
+
+      {/* DIALOG: LIVE @vercel/og SHARE CARD */}
       <BalDialog
         open={shareOpen && Boolean(ogShareMeta)}
         onClose={() => setShareOpen(false)}
         title={`Share /seed/${analyzed?.seed ?? ''}`}
-        description="Paste into Discord or Twitter/X for an instant 1200×630 OG card"
+        description="Paste into Discord or X for an instant 1200×630 OG card"
       >
         {ogShareMeta && analyzed && (
           <div className="flex flex-col gap-3">
-            <div className="overflow-hidden rounded-[8px] border-2 border-[#b9c2d2] bg-[#141e20]">
+            <div className="overflow-hidden rounded-[8px] border-2 border-[var(--j-border)] bg-[#141e20]">
               <img
                 src={ogShareMeta.ogUrl}
                 alt={`OpenGraph share card for Balatro seed ${analyzed.seed}`}
@@ -3727,7 +3880,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
               />
             </div>
 
-            <div className="rounded-[6px] border border-[#4f6367] bg-[#182426] px-2.5 py-1.5 font-mono text-[12px] text-[#7be0b4] break-all">
+            <div className="rounded-[6px] border border-white/15 bg-[#182426] px-2.5 py-1.5 font-mono text-[12px] text-[#7be0b4] break-all">
               {ogShareMeta.shortShareUrl}
             </div>
 
@@ -3780,7 +3933,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
         )}
       </BalDialog>
 
-      {/* Self-Contained Balatro Quick Reference Dialog */}
+      {/* DIALOG: JAML REFERENCE */}
       <BalDialog
         open={guideOpen}
         onClose={() => setGuideOpen(false)}
@@ -3789,14 +3942,14 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       >
         <div className="flex flex-col gap-2.5 text-[14px] leading-snug">
           <p>
-            Top-level keys: <code className="text-[#f5b841]">name</code>,{' '}
-            <code className="text-[#f5b841]">deck</code>,{' '}
-            <code className="text-[#f5b841]">stake</code>,{' '}
-            <code className="text-[#f5b841]">must</code>,{' '}
-            <code className="text-[#f5b841]">should</code>,{' '}
-            <code className="text-[#f5b841]">mustNot</code>.
+            Top-level keys: <code className="text-[var(--j-gold)]">name</code>,{' '}
+            <code className="text-[var(--j-gold)]">deck</code>,{' '}
+            <code className="text-[var(--j-gold)]">stake</code>,{' '}
+            <code className="text-[var(--j-gold)]">must</code>,{' '}
+            <code className="text-[var(--j-gold)]">should</code>,{' '}
+            <code className="text-[var(--j-gold)]">mustNot</code>.
           </p>
-          <pre className="rounded-[6px] border border-[#162022] bg-[#151f21] p-2.5 text-[12px] font-mono overflow-x-auto text-white/95">
+          <pre className="rounded-[6px] border border-white/10 bg-[#151f21] p-2.5 text-[12px] font-mono overflow-x-auto text-white/95">
 {`deck: Plasma
 stake: White
 must:
@@ -3809,8 +3962,8 @@ should:
     antes: [1, 2]
     score: 12`}
           </pre>
-          <p className="text-[13px] text-[#b7c7ca]">
-            Press <code className="text-white">Ctrl+Space</code> in Monaco IDE for autocomplete across all 150 Jokers, 32 Vouchers, 24 Tags, 28 Boss Blinds, Tarots, Spectrals, and source keys directly from <code className="text-[#f5b841]">motely-wasm/jaml/schema.json</code>.
+          <p className="text-[13px] text-[var(--j-text-muted)]">
+            Press <code className="text-white">Ctrl+Space</code> in Monaco for autocomplete across all 150 Jokers, 32 Vouchers, 24 Tags, 28 Boss Blinds, Tarots, Spectrals, and source keys directly from <code className="text-[var(--j-gold)]">motely-wasm/jaml</code>.
           </p>
         </div>
       </BalDialog>

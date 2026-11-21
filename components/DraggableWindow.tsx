@@ -71,15 +71,19 @@ export const DraggableWindow: React.FC<DraggableWindowProps> = ({
   const resizeStart = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const windowRef = useRef<HTMLDivElement>(null);
 
+  const geomRef = useRef({ pos, size });
+  geomRef.current = { pos, size };
+
   // Re-clamp window cleanly whenever the viewport resizes or rotates
   useEffect(() => {
     const onResize = () => {
-      setPos((prevPos) => clampWindowGeometry(prevPos, size).pos);
-      setSize((prevSize) => clampWindowGeometry(pos, prevSize).size);
+      const clamped = clampWindowGeometry(geomRef.current.pos, geomRef.current.size);
+      setPos(clamped.pos);
+      setSize(clamped.size);
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [pos, size]);
+  }, []);
 
   const handleHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.target instanceof Element && e.target.closest('button')) return;

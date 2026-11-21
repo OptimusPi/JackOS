@@ -281,7 +281,7 @@ export async function exportSeedPosterPng(params: {
   // Footer
   ctx.font = "14px 'm6x11plus', monospace";
   ctx.fillStyle = '#8da0a4';
-  ctx.fillText('Verified by motely-wasm 32.0.3 · Real deterministic Balatro RNG', 42, H - 28);
+  ctx.fillText('seedfinder.app · Motely (NativeAOT-LLVM) · Deterministic Balatro RNG', 42, H - 28);
 
   // Trigger download
   const url = canvas.toDataURL('image/png');

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { MotelyItem, MotelyJamlyzerSeedResult } from 'motely-wasm';
 import {
   AlertTriangle,
@@ -20,7 +20,7 @@ import {
   decodePackName,
   decodeVoucherName,
 } from '../../lib/motelySprites';
-import { playCardClick, playChipHit, playRerollSweep } from '../../lib/balatroSfx';
+import { playCardClick, playChipChime, playRerollSweep } from '../../lib/balatroSfx';
 
 export interface GuideRoutePick {
   key: string;
@@ -93,7 +93,7 @@ const KEY_VOUCHERS = new Set([
   'Crystal Ball',
 ]);
 
-const DANGEROUS_BOSSES: Record<string, string> = {
+const BOSS_ALERTS: Record<string, string> = {
   'The Plant': 'Debuffs all face cards — bring Retcon / Luchador / Chicot!',
   'The Needle': '1 hand only — keep burst scoring ready',
   'The Water': '0 discards — beware Mail-In / Yorick',
@@ -106,6 +106,7 @@ const DANGEROUS_BOSSES: Record<string, string> = {
 
 const SIM_VOUCHER_NAME_TO_KEY: Record<string, string> = {
   Overstock: 'Overstock',
+  'Overstock Plus': 'OverstockPlus',
   Hone: 'Hone',
   'Glow Up': 'GlowUp',
   'Tarot Merchant': 'TarotMerchant',
@@ -171,6 +172,19 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
   const [chaosClown, setChaosClown] = useState<boolean>(false);
   const [copiedMode, setCopiedMode] = useState<'md' | 'link' | null>(null);
 
+  useEffect(() => {
+    setCompletedKeys(new Set());
+  }, [seed]);
+
+  const hasSimOverstock = simVouchers.includes('Overstock');
+  useEffect(() => {
+    setOverstockLevel((prev) => {
+      if (hasSimOverstock && prev === 0) return 1;
+      if (!hasSimOverstock && prev === 1) return 0;
+      return prev;
+    });
+  }, [hasSimOverstock]);
+
   const cardsPerRoll = 2 + overstockLevel;
   const baseRerollCost = Math.max(1, 5 - rerollDiscount);
   const freeRerolls = chaosClown ? 1 : 0;
@@ -211,7 +225,7 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
       });
     });
 
-    // 2. Scan Antes for S-Tier Jokers, Negative/Polychrome hits, and Key Vouchers
+    // 2. Scan Antes for S-Tier Jokers, Negative/Polychrome finds, and Key Vouchers
     for (const a of result.antes) {
       if (a.ante < 1) continue;
       const voucherName = decodeVoucherName(a.voucher);
@@ -266,10 +280,22 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
       });
     }
 
-    generated.sort((a, b) => a.ante - b.ante || a.location.localeCompare(b.location));
+    const locationOrder = (loc: string): number => {
+      if (loc === 'Ante Voucher') return 0;
+      if (loc.startsWith('Shop #')) return 1;
+      if (loc.startsWith('Pack #')) return 2;
+      if (loc.startsWith('Soul Pack')) return 3;
+      return 4;
+    };
+    generated.sort(
+      (a, b) =>
+        a.ante - b.ante ||
+        locationOrder(a.location) - locationOrder(b.location) ||
+        a.location.localeCompare(b.location, undefined, { numeric: true })
+    );
     onSetRoutePicks(generated);
     setCompletedKeys(new Set());
-    playChipHit(2);
+    playChipChime(2);
   };
 
   // Group picks by Ante & attach Ante metadata (Boss, Voucher, Reroll econ)
@@ -291,7 +317,7 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
         const anteData = anteLookup.get(anteNum);
         const bossName = anteData ? decodeBossName(anteData.boss) : null;
         const voucherName = anteData ? decodeVoucherName(anteData.voucher) : null;
-        const bossWarning = bossName ? DANGEROUS_BOSSES[bossName] ?? null : null;
+        const bossWarning = bossName ? BOSS_ALERTS[bossName] ?? null : null;
 
         // Deepest shop slot picked in this Ante determines total reroll budget needed for this Ante!
         let maxShopSlot = 0;
@@ -360,7 +386,11 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
 
     const origin =
       typeof window !== 'undefined' ? window.location.origin : 'https://seedfinder.app';
-    lines.push(`Inspect live map: ${origin}/seed/${encodeURIComponent(seed)}`);
+    const qs = new URLSearchParams();
+    if (deck !== 'Ghost') qs.set('deck', deck);
+    if (stake !== 'White') qs.set('stake', stake);
+    const suffix = qs.toString() ? `?${qs.toString()}` : '';
+    lines.push(`Inspect live map: ${origin}/seed/${encodeURIComponent(seed)}${suffix}`);
 
     navigator.clipboard?.writeText(lines.join('\n')).catch(() => {});
     setCopiedMode('md');
@@ -499,7 +529,7 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
             No Guide Steps Pinned Yet
           </div>
           <p className="text-[13px] text-[#b7c7ca] max-w-md">
-            Hit <strong className="text-[#f5b841]">Auto-Build Guide</strong> to scan Antes 1–{maxAnte} for
+            Click <strong className="text-[#f5b841]">Auto-Build Guide</strong> to scan Antes 1–{maxAnte} for
             Souls, Blueprint/Brainstorm/Baron/Mime, Polychrome/Negative Jokers, and key Vouchers—or
             tap any card in <strong className="text-white">JAML Map</strong> /{' '}
             <strong className="text-white">Shop &amp; Packs</strong> to pin it manually.
@@ -570,7 +600,7 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
                   </div>
                 </div>
 
-                {/* Dangerous Boss Tactical Alert */}
+                {/* Boss Heads-Up Notice */}
                 {group.bossWarning && (
                   <div className="flex items-center gap-2 rounded-[5px] border border-[#fe5f55]/70 bg-[#fe5f55]/15 px-2.5 py-1 text-[12px] text-[#ffd4d1]">
                     <AlertTriangle size={14} className="shrink-0 text-[#fe5f55]" />

@@ -29,7 +29,7 @@ import {
   copySeedCardPngToClipboard,
   downloadSeedCardPng,
 } from '../../lib/balatroCardCanvas';
-import { playCardClick, playChipHit, playRerollSweep } from '../../lib/balatroSfx';
+import { playCardClick, playChipChime, playRerollSweep } from '../../lib/balatroSfx';
 
 export interface SeedCardStudioProps {
   seed: string;
@@ -186,6 +186,11 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
   const [heroIndex, setHeroIndex] = useState<number>(0);
   const [exportLayout, setExportLayout] = useState<SeedCardExportLayout>('showcase');
 
+  const maxLoadedAnte = useMemo(
+    () => result.antes.reduce((m, a) => (a.ante > m ? a.ante : m), 8),
+    [result.antes]
+  );
+
   const deterministicDefaults = useMemo(() => {
     const topShopNames = shopItems
       .slice(0, 3)
@@ -214,10 +219,10 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
     ];
     const quote =
       souls.length > 0
-        ? `${souls.length} Soul Legendaries charted in Antes 1-8.`
+        ? `${souls.length} Soul Legendaries charted in Antes 1-${maxLoadedAnte}.`
         : `Verified deterministic RNG on ${deck} Deck.`;
     return { title, sub, lines, quote };
-  }, [seed, deck, stake, ante, style, souls, shopItems, bossName, voucherName, smallTag]);
+  }, [seed, deck, stake, ante, style, souls, shopItems, bossName, voucherName, smallTag, maxLoadedAnte]);
 
   const [cardName, setCardName] = useState<string>(deterministicDefaults.title);
   const [subtitle, setSubtitle] = useState<string>(deterministicDefaults.sub);
@@ -225,20 +230,34 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
   const [flavorQuote, setFlavorQuote] = useState<string>(deterministicDefaults.quote);
   const [customArtDataUrl, setCustomArtDataUrl] = useState<string | null>(null);
 
-  // Reset deterministic defaults cleanly when the selected seed changes
+  const hasCustomCopyRef = useRef<boolean>(false);
   const lastSeedRef = useRef<string>(seed);
+
+  // Sync deterministic defaults when seed changes, or when Ante/Deck/Stake/Style changes before custom edits
   useEffect(() => {
-    if (lastSeedRef.current !== seed) {
+    const seedChanged = lastSeedRef.current !== seed;
+    if (seedChanged) {
       lastSeedRef.current = seed;
+      hasCustomCopyRef.current = false;
       setHeroIndex(0);
       setCustomArtDataUrl(null);
+      setAiError(null);
+      setAiNote(null);
+      setRarity(souls.length > 0 ? 'Legendary' : 'Rare');
+    }
+    if (seedChanged || !hasCustomCopyRef.current) {
       setCardName(deterministicDefaults.title);
       setSubtitle(deterministicDefaults.sub);
       setAbilityLines(deterministicDefaults.lines);
       setFlavorQuote(deterministicDefaults.quote);
-      setRarity(souls.length > 0 ? 'Legendary' : 'Rare');
     }
   }, [seed, deterministicDefaults, souls.length]);
+
+  useEffect(() => {
+    if (heroIndex >= heroCandidates.length && heroCandidates.length > 0) {
+      setHeroIndex(0);
+    }
+  }, [heroIndex, heroCandidates.length]);
 
   // 3D Tilt interaction state
   const [tilt, setTilt] = useState<{ rx: number; ry: number; gx: number; gy: number }>({
@@ -321,7 +340,7 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
 
   const handleDownloadPng = async () => {
     if (isSavingPng) return;
-    playChipHit(2);
+    playChipChime(2);
     setIsSavingPng(true);
     setAiError(null);
     try {
@@ -371,6 +390,7 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
       if (!resp.ok) {
         throw new Error(data.error || `Request failed (${resp.status})`);
       }
+      hasCustomCopyRef.current = true;
       if (data.cardName) setCardName(String(data.cardName).slice(0, 28));
       if (data.subtitle) setSubtitle(String(data.subtitle).slice(0, 36));
       if (Array.isArray(data.abilityLines) && data.abilityLines.length > 0) {
@@ -383,7 +403,7 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
       ) {
         setRarity(data.rarity as SeedCardRarity);
       }
-      playChipHit(1);
+      playChipChime(1);
       setAiNote(`Lore crafted via ${data.provider === 'gemini-api' ? 'Gemini API' : 'Vertex AI'} (${data.model})`);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : 'Vertex AI lore generation failed.');
@@ -419,7 +439,7 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
       }
       if (data.dataUrl) {
         setCustomArtDataUrl(data.dataUrl);
-        playChipHit(3);
+        playChipChime(3);
         setAiNote(`Artwork painted via ${data.provider === 'gemini-api' ? 'Gemini API' : 'Vertex AI'} (${data.model})`);
       }
     } catch (err) {
@@ -732,7 +752,7 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
                 <div className="text-[13px] text-[#d5b8ff] truncate">
                   {souls.length > 0
                     ? souls.slice(0, 2).map((s) => `${s.name} A${s.ante}`).join(', ')
-                    : 'None in A1-8'}
+                    : `None in A1-${maxLoadedAnte}`}
                 </div>
               </div>
             </div>
@@ -865,20 +885,22 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
           {onSelectAnte && (
             <div className="flex flex-wrap items-center gap-1 pt-0.5">
               <span className="text-[12px] text-[#b7c7ca] mr-1">Card Ante:</span>
-              {result.antes.slice(0, 8).map((a) => (
-                <BalButton
-                  key={a.ante}
-                  tone={a.ante === ante ? 'red' : 'slate'}
-                  size="xs"
-                  active={a.ante === ante}
-                  onClick={() => {
-                    playCardClick(0.95 + a.ante * 0.03);
-                    onSelectAnte(a.ante);
-                  }}
-                >
-                  A{a.ante}
-                </BalButton>
-              ))}
+              {result.antes
+                .filter((a) => a.ante >= 1 && a.ante <= 8)
+                .map((a) => (
+                  <BalButton
+                    key={a.ante}
+                    tone={a.ante === ante ? 'red' : 'slate'}
+                    size="xs"
+                    active={a.ante === ante}
+                    onClick={() => {
+                      playCardClick(0.95 + a.ante * 0.03);
+                      onSelectAnte(a.ante);
+                    }}
+                  >
+                    A{a.ante}
+                  </BalButton>
+                ))}
             </div>
           )}
         </BalPanel>
@@ -983,7 +1005,10 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
             label="Card Title"
             value={cardName}
             maxLength={28}
-            onChange={(e) => setCardName(e.target.value)}
+            onChange={(e) => {
+              hasCustomCopyRef.current = true;
+              setCardName(e.target.value);
+            }}
             placeholder="Perkeo's Vault"
           />
 
@@ -991,7 +1016,10 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
             label="Subtitle"
             value={subtitle}
             maxLength={36}
-            onChange={(e) => setSubtitle(e.target.value)}
+            onChange={(e) => {
+              hasCustomCopyRef.current = true;
+              setSubtitle(e.target.value);
+            }}
             placeholder="Ghost · White Seed"
           />
 
@@ -999,9 +1027,10 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
             label="Primary Ability Line"
             value={abilityLines[0] ?? ''}
             maxLength={54}
-            onChange={(e) =>
-              setAbilityLines((prev) => [e.target.value, prev[1] ?? '', prev[2] ?? ''])
-            }
+            onChange={(e) => {
+              hasCustomCopyRef.current = true;
+              setAbilityLines((prev) => [e.target.value, prev[1] ?? '', prev[2] ?? '']);
+            }}
           />
         </BalPanel>
       </div>

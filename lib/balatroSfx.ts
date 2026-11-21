@@ -41,7 +41,7 @@ export function playCardClick(pitch = 1): void {
   osc.stop(now + 0.055);
 }
 
-export function playChipHit(step = 0): void {
+export function playChipChime(step = 0): void {
   const ctx = getCtx();
   if (!ctx) return;
   const now = ctx.currentTime;
