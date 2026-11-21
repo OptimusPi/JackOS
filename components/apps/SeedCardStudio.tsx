@@ -10,13 +10,25 @@ import {
   Sparkles,
   Wand2,
 } from 'lucide-react';
-import { BalButton, BalCycle, BalInput, BalPanel, BalSelect } from '../balatro-ui';
 import {
+  BalBossChip,
+  BalButton,
+  BalCycle,
+  BalInput,
+  BalPanel,
+  BalSelect,
+  BalTagChip,
+  BalVoucherSprite,
+} from '../balatro-ui';
+import {
+  SpriteCell,
   decodeBossName,
   decodeItem,
   decodeJokerEnumName,
   decodeTagName,
   decodeVoucherName,
+  getPlayingCardBgCell,
+  getSealSpriteCell,
 } from '../../lib/motelySprites';
 import {
   EDITION_META,
@@ -102,6 +114,24 @@ function renderRichBalatroText(line: string): React.ReactNode {
   });
 }
 
+function renderMiniLayer(cell: SpriteCell, width: number, height: number, key: string) {
+  return (
+    <div
+      key={key}
+      className="pointer-events-none absolute inset-0"
+      style={{
+        width,
+        height,
+        backgroundImage: `url(${cell.src})`,
+        backgroundSize: `${width * cell.cols}px ${height * cell.rows}px`,
+        backgroundPosition: `-${cell.x * width}px -${cell.y * height}px`,
+        backgroundRepeat: 'no-repeat',
+        imageRendering: 'pixelated',
+      }}
+    />
+  );
+}
+
 const MiniSpriteBox: React.FC<{
   item: MotelyItem;
   width: number;
@@ -110,22 +140,19 @@ const MiniSpriteBox: React.FC<{
   const info = useMemo(() => decodeItem(item), [item]);
   const height = Math.round(width * (95 / 71));
   if (!info.sprite) return null;
+  const bgCell = info.category === 'Playing Card' ? getPlayingCardBgCell(info.enhancement) : null;
+  const sealCell = getSealSpriteCell(info.seal);
   return (
     <div
-      className={`overflow-hidden rounded-[6px] border-2 border-[#11191b] bg-[#162022] shadow-[0_6px_12px_rgba(0,0,0,0.55)] ${className}`}
+      className={`relative overflow-hidden rounded-[6px] border-2 border-[#11191b] bg-[#162022] shadow-[0_6px_12px_rgba(0,0,0,0.55)] ${className}`}
       style={{ width, height }}
     >
-      <div
-        style={{
-          width,
-          height,
-          backgroundImage: `url(${info.sprite.src})`,
-          backgroundSize: `${width * info.sprite.cols}px ${height * info.sprite.rows}px`,
-          backgroundPosition: `-${info.sprite.x * width}px -${info.sprite.y * height}px`,
-          backgroundRepeat: 'no-repeat',
-          imageRendering: 'pixelated',
-        }}
-      />
+      {bgCell && renderMiniLayer(bgCell, width, height, 'bg')}
+      {info.sprite.sheet !== 'decks' || info.enhancement !== 'Stone'
+        ? renderMiniLayer(info.sprite, width, height, 'main')
+        : null}
+      {info.faceOverlay && renderMiniLayer(info.faceOverlay, width, height, 'face')}
+      {sealCell && renderMiniLayer(sealCell, width, height, 'seal')}
     </div>
   );
 };
@@ -731,25 +758,21 @@ export const SeedCardStudio: React.FC<SeedCardStudioProps> = ({
               )}
             </div>
 
-            {/* Deterministic Run Intel Tiles */}
+            {/* Deterministic Run Intel Tiles with Real Sprites */}
             <div className="grid grid-cols-2 gap-1.5 text-[12px]">
-              <div className="rounded-[6px] border border-[#5c6c75] bg-[#223033] px-2.5 py-1.5">
-                <div className="text-[11px] text-[#9db0b4]">Ante {ante} Boss</div>
-                <div className="text-[14px] text-[#fe5f55] truncate">{bossName}</div>
+              <div className="rounded-[6px] border border-[#5c6c75] bg-[#223033] px-2.5 py-1.5 flex items-center">
+                <BalBossChip name={bossName} size={28} />
               </div>
-              <div className="rounded-[6px] border border-[#5c6c75] bg-[#223033] px-2.5 py-1.5">
-                <div className="text-[11px] text-[#9db0b4]">Ante {ante} Voucher</div>
-                <div className="text-[14px] text-[#f5b841] truncate">{voucherName}</div>
+              <div className="rounded-[6px] border border-[#5c6c75] bg-[#223033] px-2.5 py-1.5 flex items-center">
+                <BalVoucherSprite name={voucherName} width={24} />
               </div>
-              <div className="rounded-[6px] border border-[#5c6c75] bg-[#223033] px-2.5 py-1.5">
-                <div className="text-[11px] text-[#9db0b4]">Blind Tags</div>
-                <div className="text-[13px] text-[#68d1ff] truncate">
-                  {smallTag} / {bigTag}
-                </div>
+              <div className="rounded-[6px] border border-[#5c6c75] bg-[#223033] px-2.5 py-1.5 flex flex-col gap-1">
+                <BalTagChip name={smallTag} blindLabel="Small" size={20} />
+                <BalTagChip name={bigTag} blindLabel="Big" size={20} />
               </div>
-              <div className="rounded-[6px] border border-[#5c6c75] bg-[#223033] px-2.5 py-1.5">
+              <div className="rounded-[6px] border border-[#5c6c75] bg-[#223033] px-2.5 py-1.5 flex flex-col justify-center">
                 <div className="text-[11px] text-[#9db0b4]">Soul Order</div>
-                <div className="text-[13px] text-[#d5b8ff] truncate">
+                <div className="text-[13px] text-[#d5b8ff] leading-snug break-words">
                   {souls.length > 0
                     ? souls.slice(0, 2).map((s) => `${s.name} A${s.ante}`).join(', ')
                     : `None in A1-${maxLoadedAnte}`}

@@ -1,5 +1,5 @@
 import { MotelyItem } from 'motely-wasm';
-import { DecodedCardInfo, decodeItem } from './motelySprites';
+import { DecodedCardInfo, SpriteCell, decodeItem, getPlayingCardBgCell } from './motelySprites';
 
 export type SeedCardStyle = 'joker' | 'planet' | 'spectral';
 export type SeedCardEdition = 'Base' | 'Foil' | 'Holographic' | 'Polychrome' | 'Negative';
@@ -368,6 +368,25 @@ function drawCardArtwork(
       ctx.stroke();
     }
 
+    const drawCell = (cell: SpriteCell, w: number, h: number) => {
+      const sheet = imgMap.get(cell.src);
+      if (!sheet) return;
+      const cellW = sheet.width / cell.cols;
+      const cellH = sheet.height / cell.rows;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(
+        sheet,
+        cell.x * cellW,
+        cell.y * cellH,
+        cellW,
+        cellH,
+        -w / 2,
+        -h / 2,
+        w,
+        h
+      );
+    };
+
     const drawSpriteAt = (
       info: DecodedCardInfo,
       cx: number,
@@ -377,35 +396,26 @@ function drawCardArtwork(
       alpha = 1
     ) => {
       if (!info.sprite) return;
-      const sheet = imgMap.get(info.sprite.src);
-      if (!sheet) return;
       const h = Math.round(w * (95 / 71));
-      const cellW = sheet.width / info.sprite.cols;
-      const cellH = sheet.height / info.sprite.rows;
 
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.translate(cx, cy);
       ctx.rotate(rotRad);
-      // Drop shadow
       drawRoundedRect(ctx, -w / 2 + 6, -h / 2 + 10, w, h, 10);
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fill();
-      // Clipped crisp pixel sprite
       drawRoundedRect(ctx, -w / 2, -h / 2, w, h, 10);
       ctx.clip();
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(
-        sheet,
-        info.sprite.x * cellW,
-        info.sprite.y * cellH,
-        cellW,
-        cellH,
-        -w / 2,
-        -h / 2,
-        w,
-        h
-      );
+      if (info.category === 'Playing Card') {
+        drawCell(getPlayingCardBgCell(info.enhancement), w, h);
+      }
+      if (info.sprite.sheet !== 'decks' || info.enhancement !== 'Stone') {
+        drawCell(info.sprite, w, h);
+      }
+      if (info.faceOverlay) {
+        drawCell(info.faceOverlay, w, h);
+      }
       ctx.restore();
     };
 
@@ -591,7 +601,14 @@ export async function renderBalatroSeedCardCanvas(
   const uniqueSrcs = Array.from(
     new Set(
       itemsToLoad
-        .map((it) => decodeItem(it).sprite?.src)
+        .flatMap((it) => {
+          const dec = decodeItem(it);
+          return [
+            dec.sprite?.src,
+            dec.faceOverlay?.src,
+            dec.category === 'Playing Card' ? getPlayingCardBgCell(dec.enhancement).src : null,
+          ];
+        })
         .filter((s): s is string => Boolean(s))
     )
   );

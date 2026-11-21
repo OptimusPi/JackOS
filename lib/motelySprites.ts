@@ -40,8 +40,6 @@ export function getMotelyError(fallback: unknown): string {
 }
 
 // Packed LUT: sheet:8 | x:8 | y:8 (sheet 0=jokers, 1=tarots, 2=decks)
-// Needed in app code because jaml-ui@10.0.0 builds dist/motely.js & dist/sprites.js
-// but omits them from package.json "exports".
 const ITEM_SPRITE_LUT = new Map<number, number>([
   // Standard playing cards (sheet 2 = 8BitDeck.png)
   [4096, 65538], [4097, 65794], [4098, 66050], [4099, 66306], [4100, 66562], [4101, 66818], [4102, 67074],
@@ -96,8 +94,10 @@ const ITEM_SPRITE_LUT = new Map<number, number>([
   [23552, 525056], [23553, 525312], [23554, 525568], [23555, 525824], [23556, 526080],
 ]);
 
+export type AnySheetKey = keyof typeof SHEETS;
+
 export interface SpriteCell {
-  sheet: 'jokers' | 'tarots' | 'decks';
+  sheet: AnySheetKey;
   x: number;
   y: number;
   src: string;
@@ -107,6 +107,15 @@ export interface SpriteCell {
 
 const SHEET_KEYS = ['jokers', 'tarots', 'decks'] as const;
 
+function makeCell(sheet: AnySheetKey, x: number, y: number): SpriteCell {
+  const meta = SHEETS[sheet];
+  return { sheet, x, y, src: meta.src, cols: meta.cols, rows: meta.rows };
+}
+
+function normKey(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 export function getItemSpriteCell(itemType: number): SpriteCell | null {
   const packed = ITEM_SPRITE_LUT.get(itemType);
   if (packed === undefined) return null;
@@ -115,9 +124,307 @@ export function getItemSpriteCell(itemType: number): SpriteCell | null {
   const y = (packed >>> 16) & 0xff;
   const sheet = SHEET_KEYS[sheetIdx];
   if (!sheet) return null;
-  const meta = SHEETS[sheet];
-  return { sheet, x, y, src: meta.src, cols: meta.cols, rows: meta.rows };
+  return makeCell(sheet, x, y);
 }
+
+/* ============================================================================
+ * Composite Face Overlays (Legendary Jokers, Hologram, & The Soul)
+ * Matches jaml-ui/dist/sprites.js & OptimusPi/BalatroSeedOracle SpriteService
+ * ============================================================================ */
+const JOKER_FACE_COORDS: Record<string, { x: number; y: number }> = {
+  hologram: { x: 2, y: 9 },
+  canio: { x: 3, y: 9 },
+  triboulet: { x: 4, y: 9 },
+  yorick: { x: 5, y: 9 },
+  chicot: { x: 6, y: 9 },
+  perkeo: { x: 7, y: 9 },
+};
+
+export function getItemFaceOverlayCell(nameOrRaw: string): SpriteCell | null {
+  const k = normKey(nameOrRaw);
+  const jFace = JOKER_FACE_COORDS[k];
+  if (jFace) return makeCell('jokers', jFace.x, jFace.y);
+  if (k === 'thesoul' || k === 'soul') {
+    return makeCell('enhancers', 0, 1);
+  }
+  return null;
+}
+
+/* ============================================================================
+ * Playing Card Enhancements, Seals, Editions, & Stickers (jaml-ui sprites.js)
+ * ============================================================================ */
+const ENHANCER_COORDS: Record<string, { x: number; y: number }> = {
+  none: { x: 1, y: 0 },
+  bonus: { x: 1, y: 1 },
+  mult: { x: 2, y: 1 },
+  wild: { x: 3, y: 1 },
+  lucky: { x: 4, y: 1 },
+  glass: { x: 5, y: 1 },
+  steel: { x: 6, y: 1 },
+  stone: { x: 5, y: 0 },
+  gold: { x: 6, y: 0 },
+};
+
+const SEAL_COORDS: Record<string, { x: number; y: number }> = {
+  gold: { x: 2, y: 0 },
+  purple: { x: 4, y: 4 },
+  red: { x: 5, y: 4 },
+  blue: { x: 6, y: 4 },
+};
+
+const STICKER_COORDS: Record<string, { x: number; y: number }> = {
+  eternal: { x: 0, y: 0 },
+  perishable: { x: 0, y: 2 },
+  rental: { x: 1, y: 2 },
+};
+
+export function getPlayingCardBgCell(enhancement: string | null): SpriteCell {
+  const c = (enhancement && ENHANCER_COORDS[normKey(enhancement)]) || ENHANCER_COORDS.none;
+  return makeCell('enhancers', c.x, c.y);
+}
+
+export function getSealSpriteCell(seal: string | null): SpriteCell | null {
+  if (!seal) return null;
+  const c = SEAL_COORDS[normKey(seal)];
+  return c ? makeCell('enhancers', c.x, c.y) : null;
+}
+
+export function getStickerSpriteCell(sticker: 'Eternal' | 'Perishable' | 'Rental'): SpriteCell {
+  const c = STICKER_COORDS[normKey(sticker)];
+  return makeCell('stickers', c.x, c.y);
+}
+
+/* ============================================================================
+ * Vouchers, Skip Tags, Boss Blinds, & Booster Packs (Blueprint + jaml-ui LUTs)
+ * ============================================================================ */
+const VOUCHER_COORDS: Record<string, { x: number; y: number }> = {
+  overstock: { x: 0, y: 0 },
+  tarotmerchant: { x: 1, y: 0 },
+  planetmerchant: { x: 2, y: 0 },
+  clearancesale: { x: 3, y: 0 },
+  hone: { x: 4, y: 0 },
+  grabber: { x: 5, y: 0 },
+  wasteful: { x: 6, y: 0 },
+  blank: { x: 7, y: 0 },
+  overstockplus: { x: 0, y: 1 },
+  tarottycoon: { x: 1, y: 1 },
+  planettycoon: { x: 2, y: 1 },
+  liquidation: { x: 3, y: 1 },
+  glowup: { x: 4, y: 1 },
+  nachotong: { x: 5, y: 1 },
+  recyclomancy: { x: 6, y: 1 },
+  antimatter: { x: 7, y: 1 },
+  rerollsurplus: { x: 0, y: 2 },
+  seedmoney: { x: 1, y: 2 },
+  crystalball: { x: 2, y: 2 },
+  telescope: { x: 3, y: 2 },
+  magictrick: { x: 4, y: 2 },
+  hieroglyph: { x: 5, y: 2 },
+  directorscut: { x: 6, y: 2 },
+  paintbrush: { x: 7, y: 2 },
+  rerollglut: { x: 0, y: 3 },
+  moneytree: { x: 1, y: 3 },
+  omenglobe: { x: 2, y: 3 },
+  observatory: { x: 3, y: 3 },
+  illusion: { x: 4, y: 3 },
+  petroglyph: { x: 5, y: 3 },
+  retcon: { x: 6, y: 3 },
+  palette: { x: 7, y: 3 },
+};
+
+const TAG_COORDS: Record<string, { x: number; y: number }> = {
+  uncommontag: { x: 0, y: 0 },
+  raretag: { x: 1, y: 0 },
+  negativetag: { x: 2, y: 0 },
+  foiltag: { x: 3, y: 0 },
+  coupontag: { x: 4, y: 0 },
+  doubletag: { x: 5, y: 0 },
+  holographictag: { x: 0, y: 1 },
+  polychrometag: { x: 1, y: 1 },
+  investmenttag: { x: 2, y: 1 },
+  vouchertag: { x: 3, y: 1 },
+  topuptag: { x: 4, y: 1 },
+  juggletag: { x: 5, y: 1 },
+  bosstag: { x: 0, y: 2 },
+  standardtag: { x: 1, y: 2 },
+  charmtag: { x: 2, y: 2 },
+  meteortag: { x: 3, y: 2 },
+  buffoontag: { x: 4, y: 2 },
+  orbitaltag: { x: 5, y: 2 },
+  speedtag: { x: 0, y: 3 },
+  handytag: { x: 1, y: 3 },
+  garbagetag: { x: 2, y: 3 },
+  etherealtag: { x: 3, y: 3 },
+  economytag: { x: 4, y: 3 },
+  d6tag: { x: 5, y: 3 },
+};
+
+const BOSS_COORDS: Record<string, { x: number; y: number }> = {
+  smallblind: { x: 0, y: 0 },
+  bigblind: { x: 0, y: 1 },
+  theox: { x: 0, y: 2 },
+  thehouse: { x: 0, y: 3 },
+  theclub: { x: 0, y: 4 },
+  thefish: { x: 0, y: 5 },
+  thewindow: { x: 0, y: 6 },
+  thehook: { x: 0, y: 7 },
+  themanacle: { x: 0, y: 8 },
+  thewall: { x: 0, y: 9 },
+  thewheel: { x: 0, y: 10 },
+  thearm: { x: 0, y: 11 },
+  thepsychic: { x: 0, y: 12 },
+  thegoad: { x: 0, y: 13 },
+  thewater: { x: 0, y: 14 },
+  theserpent: { x: 0, y: 15 },
+  thepillar: { x: 0, y: 16 },
+  theeye: { x: 0, y: 17 },
+  themouth: { x: 0, y: 18 },
+  theplant: { x: 0, y: 19 },
+  theneedle: { x: 0, y: 20 },
+  thehead: { x: 0, y: 21 },
+  thetooth: { x: 0, y: 22 },
+  themark: { x: 0, y: 23 },
+  theflint: { x: 0, y: 24 },
+  crimsonheart: { x: 0, y: 25 },
+  ceruleanbell: { x: 0, y: 26 },
+  amberacorn: { x: 0, y: 27 },
+  verdantleaf: { x: 0, y: 28 },
+  theverdant: { x: 0, y: 28 },
+  violetvessel: { x: 0, y: 29 },
+};
+
+const BOOSTER_COORDS: Record<string, { x: number; y: number }> = {
+  arcanapack: { x: 0, y: 0 },
+  celestialpack: { x: 0, y: 1 },
+  jumboarcanapack: { x: 0, y: 2 },
+  megaarcanapack: { x: 2, y: 2 },
+  jumbocelestialpack: { x: 0, y: 3 },
+  megacelestialpack: { x: 2, y: 3 },
+  spectralpack: { x: 0, y: 4 },
+  jumbospectralpack: { x: 2, y: 4 },
+  megaspectralpack: { x: 3, y: 4 },
+  standardpack: { x: 0, y: 6 },
+  jumbostandardpack: { x: 0, y: 7 },
+  megastandardpack: { x: 2, y: 7 },
+  buffoonpack: { x: 0, y: 8 },
+  jumbobuffoonpack: { x: 2, y: 8 },
+  megabuffoonpack: { x: 3, y: 8 },
+};
+
+export function getVoucherSpriteCell(name: string): SpriteCell {
+  const c = VOUCHER_COORDS[normKey(name)] ?? { x: 8, y: 2 };
+  return makeCell('vouchers', c.x, c.y);
+}
+
+export function getTagSpriteCell(name: string): SpriteCell {
+  const k = normKey(name);
+  const c = TAG_COORDS[k] ?? TAG_COORDS[`${k}tag`] ?? { x: 3, y: 4 };
+  return makeCell('tags', c.x, c.y);
+}
+
+export function getBossSpriteCell(name: string): SpriteCell {
+  const c = BOSS_COORDS[normKey(name)] ?? { x: 0, y: 30 };
+  return makeCell('blinds', c.x, c.y);
+}
+
+export function getBoosterSpriteCell(name: string): SpriteCell {
+  const k = normKey(name);
+  const c = BOOSTER_COORDS[k] ?? BOOSTER_COORDS[`${k}pack`] ?? { x: 0, y: 5 };
+  return makeCell('boosters', c.x, c.y);
+}
+
+export const BOSS_DESCRIPTIONS: Record<string, string> = {
+  'The Ox': 'Playing your most-played hand sets money to $0',
+  'The Hook': 'Discards 2 random cards held in hand per hand played',
+  'The Mouth': 'Play only 1 hand type this round',
+  'The Fish': 'Cards drawn face down after each hand played',
+  'The Club': 'All Club cards are debuffed',
+  'The Manacle': '-1 Hand Size',
+  'The Tooth': 'Lose $1 per card played',
+  'The Wall': 'Extra large blind (4× base)',
+  'The House': 'First hand is drawn face down',
+  'The Mark': 'All face cards are drawn face down',
+  'Cerulean Bell': 'Forces 1 card to always be selected',
+  'The Wheel': '1 in 7 cards get drawn face down',
+  'The Arm': 'Decrease level of played poker hand',
+  'The Psychic': 'Must play 5 cards',
+  'The Goad': 'All Spade cards are debuffed',
+  'The Water': 'Start with 0 discards',
+  'The Eye': 'No repeat hand types this round',
+  'The Plant': 'All face cards are debuffed',
+  'The Needle': 'Play only 1 hand',
+  'The Head': 'All Heart cards are debuffed',
+  'Verdant Leaf': 'All cards debuffed until 1 Joker sold',
+  'Violet Vessel': 'Very large blind (6× base)',
+  'The Window': 'All Diamond cards are debuffed',
+  'The Serpent': 'After Play or Discard, always draw 3 cards',
+  'The Pillar': 'Cards played previously this Ante are debuffed',
+  'The Flint': 'Base Chips and Mult are halved',
+  'Amber Acorn': 'Flips and shuffles all Joker cards',
+  'Crimson Heart': 'One random Joker disabled every hand',
+};
+
+export const VOUCHER_DESCRIPTIONS: Record<string, string> = {
+  Overstock: '+1 card slot available in shop (3 slots)',
+  'Overstock Plus': '+1 card slot available in shop (4 slots)',
+  'Clearance Sale': 'All cards and packs in shop are 25% off',
+  Liquidation: 'All cards and packs in shop are 50% off',
+  Hone: 'Foil, Holographic, and Polychrome cards appear 2× more often',
+  'Glow Up': 'Foil, Holographic, and Polychrome cards appear 4× more often',
+  'Reroll Surplus': 'Rerolls cost $2 less',
+  'Reroll Glut': 'Rerolls cost $4 less',
+  'Crystal Ball': '+1 consumable slot',
+  'Omen Globe': 'Spectral cards may appear in any Arcana Pack',
+  Telescope: 'Celestial Packs always contain your most played poker hand Planet',
+  Observatory: 'Planet cards in your consumable area give X1.5 Mult for their hand',
+  Grabber: 'Permanently gain +1 hand per round',
+  'Nacho Tong': 'Permanently gain an additional +1 hand per round',
+  Wasteful: 'Permanently gain +1 discard each round',
+  Recyclomancy: 'Permanently gain an additional +1 discard each round',
+  'Tarot Merchant': 'Tarot cards appear 2× more frequently in the shop',
+  'Tarot Tycoon': 'Tarot cards appear 4× more frequently in the shop',
+  'Planet Merchant': 'Planet cards appear 2× more frequently in the shop',
+  'Planet Tycoon': 'Planet cards appear 4× more frequently in the shop',
+  'Seed Money': 'Raise the cap on interest earned in each round to $10',
+  'Money Tree': 'Raise the cap on interest earned in each round to $20',
+  Blank: 'Does nothing…? (Unlocks Antimatter)',
+  Antimatter: '+1 Joker Slot',
+  'Magic Trick': 'Playing cards can be purchased from the shop',
+  Illusion: 'Playing cards in shop may have an Enhancement, Edition, and/or Seal',
+  Hieroglyph: '-1 Ante, -1 hand each round',
+  Petroglyph: '-1 Ante, -1 discard each round',
+  "Director's Cut": 'Reroll Boss Blind 1 time per Ante ($10)',
+  Retcon: 'Reroll Boss Blind unlimited times ($10 per roll)',
+  'Paint Brush': '+1 hand size',
+  Palette: '+1 hand size again',
+};
+
+export const TAG_DESCRIPTIONS: Record<string, string> = {
+  'Uncommon Tag': 'Next shop has a free Uncommon Joker',
+  'Rare Tag': 'Next shop has a free Rare Joker',
+  'Negative Tag': 'Next base-edition shop Joker becomes free & Negative',
+  'Foil Tag': 'Next base-edition shop Joker becomes free & Foil',
+  'Holographic Tag': 'Next base-edition shop Joker becomes free & Holographic',
+  'Polychrome Tag': 'Next base-edition shop Joker becomes free & Polychrome',
+  'Investment Tag': 'After defeating the Boss Blind, gain $25',
+  'Voucher Tag': 'Adds 1 extra Voucher to the next shop',
+  'Boss Tag': 'Rerolls the Boss Blind',
+  'Standard Tag': 'Immediately opens a free Mega Standard Pack',
+  'Charm Tag': 'Immediately opens a free Mega Arcana Pack',
+  'Meteor Tag': 'Immediately opens a free Mega Celestial Pack',
+  'Buffoon Tag': 'Immediately opens a free Mega Buffoon Pack',
+  'Handy Tag': 'Gives $1 per played hand this run',
+  'Garbage Tag': 'Gives $1 per unused discard this run',
+  'Ethereal Tag': 'Immediately opens a free Spectral Pack',
+  'Coupon Tag': 'Initial cards and booster packs in next shop are free',
+  'Double Tag': 'Gives a copy of the next selected Tag',
+  'Juggle Tag': '+3 hand size next round',
+  'D6 Tag': 'Rerolls in next shop start at $0',
+  'Top-up Tag': 'Create up to 2 Common Jokers (if you have space)',
+  'Speed Tag': 'Gives $5 per skipped Blind this run',
+  'Orbital Tag': 'Upgrades a random poker hand by 3 levels',
+  'Economy Tag': 'Doubles your money (max +$40)',
+};
 
 export type EditionLabel = 'Foil' | 'Holographic' | 'Polychrome' | 'Negative' | null;
 export type SealLabel = 'Gold' | 'Red' | 'Blue' | 'Purple' | null;
@@ -133,6 +440,7 @@ export interface DecodedCardInfo {
   isPerishable: boolean;
   isRental: boolean;
   sprite: SpriteCell | null;
+  faceOverlay: SpriteCell | null;
 }
 
 export function decodeItem(item: MotelyItem): DecodedCardInfo {
@@ -175,6 +483,7 @@ export function decodeItem(item: MotelyItem): DecodedCardInfo {
     isPerishable: Boolean(item.isPerishable),
     isRental: Boolean(item.isRental),
     sprite: getItemSpriteCell(item.type),
+    faceOverlay: getItemFaceOverlayCell(name),
   };
 }
 
@@ -213,6 +522,49 @@ export interface JamlPreset {
 
 export const JAML_PRESETS: JamlPreset[] = [
   {
+    id: 'oracle-ghost-perkeo-bp',
+    label: 'Ghost Perkeo + Blueprint (Oracle)',
+    deck: 'Ghost',
+    stake: 'White',
+    yaml: `name: Ghost Perkeo + Blueprint
+deck: Ghost
+stake: White
+must:
+  - legendaryJoker: Perkeo
+    antes: [1]
+    sources:
+      arcanaPacks: [1, 2]
+      spectralPacks: [1, 2]
+should:
+  - joker: Blueprint
+    antes: [1, 2]
+    score: 12
+  - joker: Brainstorm
+    antes: [1, 2]
+    score: 10`,
+  },
+  {
+    id: 'oracle-perkeo-observatory',
+    label: 'Perkeo + Observatory Combo',
+    deck: 'Ghost',
+    stake: 'White',
+    yaml: `name: Perkeo Observatory
+deck: Ghost
+stake: White
+must:
+  - legendaryJoker: Perkeo
+    antes: [1, 2]
+  - voucher: Telescope
+    antes: [1, 2]
+should:
+  - voucher: Observatory
+    antes: [2, 3, 4]
+    score: 15
+  - joker: Blueprint
+    antes: [1, 2, 3]
+    score: 10`,
+  },
+  {
     id: 'blueprint-ante1',
     label: 'Ante 1 Blueprint (Shop)',
     deck: 'Red',
@@ -231,19 +583,25 @@ should:
     score: 5`,
   },
   {
-    id: 'perkeo-ghost',
-    label: 'Ante 1 Perkeo (Ghost)',
-    deck: 'Ghost',
+    id: 'wee-joker-ante1',
+    label: 'Daily Wees (Wee + Hack)',
+    deck: 'Plasma',
     stake: 'White',
-    yaml: `name: Ante 1 Perkeo
-deck: Ghost
+    yaml: `name: Daily Wees
+deck: Plasma
 stake: White
 must:
-  - legendaryJoker: Perkeo
+  - joker: WeeJoker
     antes: [1]
     sources:
-      arcanaPacks: [1, 2]
-      spectralPacks: [1, 2]`,
+      shopItems: [1, 2, 3, 4]
+should:
+  - joker: Hack
+    antes: [1, 2]
+    score: 12
+  - joker: Blueprint
+    antes: [1, 2, 3]
+    score: 10`,
   },
   {
     id: 'triboulet-run',
@@ -266,7 +624,7 @@ should:
   },
   {
     id: 'baron-mime',
-    label: 'Baron + Mime Early',
+    label: 'Baron + Mime naneinf Setup',
     deck: 'Plasma',
     stake: 'White',
     yaml: `name: Baron & Mime
@@ -280,7 +638,29 @@ must:
 should:
   - joker: Blueprint
     antes: [1, 2, 3]
-    score: 10`,
+    score: 10
+  - joker: DNA
+    antes: [1, 2, 3]
+    score: 8`,
+  },
+  {
+    id: 'oracle-negative-tags',
+    label: 'Double Negative Skip Tags',
+    deck: 'Anaglyph',
+    stake: 'White',
+    yaml: `name: Negative Skip Party
+deck: Anaglyph
+stake: White
+must:
+  - tag: NegativeTag
+    antes: [1, 2]
+should:
+  - tag: NegativeTag
+    antes: [3, 4]
+    score: 10
+  - joker: Blueprint
+    antes: [1, 2, 3]
+    score: 8`,
   },
   {
     id: 'polychrome-ante1',
@@ -296,27 +676,6 @@ must:
     antes: [1]
     sources:
       shopItems: [1, 2, 3, 4]`,
-  },
-  {
-    id: 'wee-joker-ante1',
-    label: 'Ante 1 Wee Joker + Hack',
-    deck: 'Plasma',
-    stake: 'White',
-    yaml: `name: Wee Joker Supremacy
-deck: Plasma
-stake: White
-must:
-  - joker: WeeJoker
-    antes: [1]
-    sources:
-      shopItems: [1, 2, 3, 4]
-should:
-  - joker: Hack
-    antes: [1, 2]
-    score: 12
-  - joker: Blueprint
-    antes: [1, 2, 3]
-    score: 10`,
   },
   {
     id: 'erratic-aces',

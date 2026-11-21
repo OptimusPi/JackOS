@@ -1,10 +1,12 @@
 import { MotelyJamlyzerSeedResult } from 'motely-wasm';
 import {
+  SpriteCell,
   decodeBossName,
   decodeItem,
   decodeJokerEnumName,
   decodeTagName,
   decodeVoucherName,
+  getPlayingCardBgCell,
 } from './motelySprites';
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -144,7 +146,15 @@ export async function exportSeedPosterPng(params: {
   const allItems = [...shopPreview, ...soulPreview.map((s) => s.item)];
   const decodedAll = allItems.map((it) => decodeItem(it));
   const uniqueSrcs = Array.from(
-    new Set(decodedAll.map((d) => d.sprite?.src).filter((s): s is string => Boolean(s)))
+    new Set(
+      decodedAll
+        .flatMap((d) => [
+          d.sprite?.src,
+          d.faceOverlay?.src,
+          d.category === 'Playing Card' ? getPlayingCardBgCell(d.enhancement).src : null,
+        ])
+        .filter((s): s is string => Boolean(s))
+    )
   );
 
   const imgMap = new Map<string, HTMLImageElement>();
@@ -157,6 +167,15 @@ export async function exportSeedPosterPng(params: {
       }
     })
   );
+
+  const drawCellInRect = (cell: SpriteCell, x: number, y: number, w: number, h: number) => {
+    const sheetImg = imgMap.get(cell.src);
+    if (!sheetImg) return;
+    const cellW = sheetImg.width / cell.cols;
+    const cellH = sheetImg.height / cell.rows;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(sheetImg, cell.x * cellW, cell.y * cellH, cellW, cellH, x, y, w, h);
+  };
 
   const drawCard = (
     item: (typeof allItems)[number],
@@ -178,25 +197,19 @@ export async function exportSeedPosterPng(params: {
     ctx.fillStyle = '#1b272a';
     ctx.fill();
 
-    if (info.sprite && imgMap.has(info.sprite.src)) {
-      const sheetImg = imgMap.get(info.sprite.src)!;
-      const cellW = sheetImg.width / info.sprite.cols;
-      const cellH = sheetImg.height / info.sprite.rows;
+    if (info.sprite) {
       ctx.save();
       drawRoundedRect(ctx, x, y, cardW, cardH, 8);
       ctx.clip();
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(
-        sheetImg,
-        info.sprite.x * cellW,
-        info.sprite.y * cellH,
-        cellW,
-        cellH,
-        x,
-        y,
-        cardW,
-        cardH
-      );
+      if (info.category === 'Playing Card') {
+        drawCellInRect(getPlayingCardBgCell(info.enhancement), x, y, cardW, cardH);
+      }
+      if (info.sprite.sheet !== 'decks' || info.enhancement !== 'Stone') {
+        drawCellInRect(info.sprite, x, y, cardW, cardH);
+      }
+      if (info.faceOverlay) {
+        drawCellInRect(info.faceOverlay, x, y, cardW, cardH);
+      }
       ctx.restore();
     }
 

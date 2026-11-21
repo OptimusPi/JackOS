@@ -7,7 +7,15 @@ import {
 } from 'motely-wasm';
 import type { JamlFilter } from 'motely-wasm/jaml';
 import { ArrowRight, Check, Flame, Map as MapIcon, Sparkles, X } from 'lucide-react';
-import { BalButton, BalCard, BalPanel } from '../balatro-ui';
+import {
+  BalBossChip,
+  BalButton,
+  BalCard,
+  BalPanel,
+  BalShopBelt,
+  BalTagChip,
+  BalVoucherSprite,
+} from '../balatro-ui';
 import {
   decodeBossName,
   decodeItem,
@@ -379,24 +387,12 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
                     </BalButton>
                   </div>
 
-                  {/* 2x2 Compact Metadata Grid (Boss / Voucher / Small Tag / Big Tag) */}
-                  <div className="grid grid-cols-2 gap-1.5 text-[12px]">
-                    <div className="rounded-[5px] bg-[#182426] px-2 py-1 min-w-0">
-                      <div className="text-[10px] uppercase text-[#9db0b4]">Boss Blind</div>
-                      <div className="text-[#fe5f55] truncate">{node.bossLabel}</div>
-                    </div>
-                    <div className="rounded-[5px] bg-[#182426] px-2 py-1 min-w-0">
-                      <div className="text-[10px] uppercase text-[#9db0b4]">Voucher</div>
-                      <div className="text-[#f5b841] truncate">{node.voucherLabel}</div>
-                    </div>
-                    <div className="rounded-[5px] bg-[#182426] px-2 py-1 min-w-0">
-                      <div className="text-[10px] uppercase text-[#9db0b4]">Small Tag</div>
-                      <div className="text-white truncate">{node.smallTagLabel}</div>
-                    </div>
-                    <div className="rounded-[5px] bg-[#182426] px-2 py-1 min-w-0">
-                      <div className="text-[10px] uppercase text-[#9db0b4]">Big Tag</div>
-                      <div className="text-white truncate">{node.bigTagLabel}</div>
-                    </div>
+                  {/* Boss Chip, Voucher Card, & Skip Tag Sprites */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 rounded-[6px] bg-[#182426]/90 p-2.5">
+                    <BalBossChip name={node.bossLabel} size={32} />
+                    <BalVoucherSprite name={node.voucherLabel} width={28} />
+                    <BalTagChip name={node.smallTagLabel} blindLabel="Small Blind" size={24} />
+                    <BalTagChip name={node.bigTagLabel} blindLabel="Big Blind" size={24} />
                   </div>
 
                   {/* Live JAML Filter Clause Matches for this Ante */}
@@ -461,22 +457,22 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
                     </div>
                   )}
 
-                  {/* First 4 Shop Slots in a clean 4-column iPhone grid */}
-                  {node.previewShop.length > 0 && (
-                    <div className="pt-1 border-t border-white/10">
-                      <div className="mb-1 flex items-center justify-between text-[11px] text-[#b7c7ca]">
-                        <span>Opening Shop (#1–#{node.previewShop.length})</span>
-                        <span>{node.packCount} packs</span>
+                  {/* Opening Shop Belt */}
+                  {node.shopEntries.length > 0 && (
+                    <div className="pt-1.5 border-t border-white/10">
+                      <div className="mb-1 flex items-center justify-between text-[12px] text-[#b7c7ca]">
+                        <span>Shop Queue (#1–#{Math.min(8, node.shopEntries.length)})</span>
+                        <span>{node.packCount} booster packs</span>
                       </div>
-                      <div className="grid grid-cols-4 sm:flex sm:flex-wrap gap-1.5 justify-items-center">
-                        {node.previewShop.map((entry) => {
+                      <BalShopBelt showStepButtons={false}>
+                        {node.shopEntries.slice(0, 8).map((entry) => {
                           const rKey = `A${node.ante}-shop-${entry.idx}`;
                           return (
                             <BalCard
                               key={rKey}
                               item={entry.item}
                               index={entry.idx}
-                              width={52}
+                              width={54}
                               selected={routeKeySet.has(rKey)}
                               onClick={() =>
                                 onToggleRouteCard(rKey, node.ante, entry.location, entry.item)
@@ -484,7 +480,7 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
                             />
                           );
                         })}
-                      </div>
+                      </BalShopBelt>
                     </div>
                   )}
                 </div>

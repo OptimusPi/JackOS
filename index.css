@@ -33,28 +33,164 @@
   }
 }
 
-/* Unlayered jaml-ui ergonomic refinements (cleanly wins over @layer jaml.components without !important) */
+/* ============================================================================
+ * Unlayered jaml-ui ergonomic & pixel-font anti-clipping refinements
+ * (Cleanly wins over @layer jaml.components without !important per AGENTS.md)
+ * ============================================================================ */
+
 .j-field__label:empty {
   display: none;
 }
 
+/* Fix pixel-font glyph clipping caused by text-box: trim-both cap alphabetic + line-height: 1 */
 .j-button__face {
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  padding: 6px 14px 7px;
+  line-height: 1.2;
+  text-box: normal;
+  min-width: 0;
+}
+
+.j-button[data-size='xs'] .j-button__face {
+  padding: 4px 10px 5px;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.j-button[data-size='sm'] .j-button__face {
+  padding: 5px 12px 6px;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.j-button[data-size='md'] .j-button__face {
+  padding: 7px 15px 8px;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.j-button[data-size='lg'] .j-button__face {
+  padding: 9px 20px 10px;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+/* Authentic Balatro button darken feedback per jaml-ui AGENTS.md */
+@media (hover: hover) {
+  .j-button:not([data-disabled]):hover .j-button__face {
+    background: var(--j-tone);
+    filter: brightness(0.88);
+  }
+}
+
+.j-button:not([data-disabled]):active .j-button__face,
+.j-button:not([data-disabled])[data-pressed] .j-button__face {
+  background: var(--j-tone);
+  filter: brightness(0.75);
+  transform: translateY(var(--j-depth-press));
+  box-shadow: none;
+}
+
+/* Prevent panel & dialog titles from slicing pixel ascenders/descenders */
+.j-panel__title,
+.j-dialog__title {
+  line-height: 1.22;
+  text-box: normal;
+}
+
+/* Select trigger & value truncation safety in narrow rails */
+.j-select {
+  min-width: 0;
+  width: 100%;
 }
 
 .j-select__trigger {
   min-width: 0;
   width: 100%;
-  min-height: 36px;
+  min-height: 38px;
   padding: 6px 10px;
+  gap: 6px;
   font-size: 15px;
+  line-height: 1.25;
+}
+
+.j-select__value {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.j-select__icon {
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.j-select__item {
+  padding: 8px 10px;
+  line-height: 1.25;
+}
+
+.j-select__text {
+  min-width: 0;
+  line-height: 1.25;
+}
+
+/* Input & Field breathing room */
+.j-field {
+  min-width: 0;
+}
+
+.j-field__label {
+  line-height: 1.2;
 }
 
 .j-input {
-  min-height: 36px;
+  min-height: 38px;
   padding: 6px 10px;
   font-size: 15px;
+  line-height: 1.25;
+}
+
+/* Cycle full-width & anti-overflow */
+.j-cycle {
+  width: 100%;
+  min-width: 0;
+  justify-items: stretch;
+}
+
+.j-cycle__label {
+  text-align: center;
+  line-height: 1.2;
+}
+
+.j-cycle__row {
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+}
+
+.j-cycle__value {
+  min-width: 0;
+  padding: 6px 8px;
+  line-height: 1.25;
+  text-align: center;
+}
+
+/* Badge & Tooltip line-height safety */
+.j-badge {
+  line-height: 1.2;
+  padding: 3px 8px;
+}
+
+.j-tooltip {
+  max-width: 310px;
+  line-height: 1.25;
+  padding: 7px 11px;
 }
 
 .j-dialog {
@@ -79,17 +215,38 @@
 
 /* Compact top-bar tabs variant */
 .j-tabs--compact .j-tabs__list {
-  padding-top: 12px;
+  padding-top: 13px;
   gap: 6px;
+  flex-wrap: nowrap;
 }
 
 .j-tabs--compact .j-tabs__indicator {
-  height: 10px;
+  height: 11px;
 }
 
 .j-tabs--compact .j-tabs__arrow {
   width: 12px;
-  height: 7px;
+  height: 8px;
+}
+
+/* Horizontal Balatro Shop Belt (wheel + pointer drag) */
+.bal-shop-belt {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(185, 194, 210, 0.35) rgba(0, 0, 0, 0.2);
+}
+
+.bal-shop-belt::-webkit-scrollbar {
+  height: 6px;
+}
+
+.bal-shop-belt::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 999px;
+}
+
+.bal-shop-belt::-webkit-scrollbar-thumb {
+  background: rgba(185, 194, 210, 0.35);
+  border-radius: 999px;
 }
 
 @layer utilities {

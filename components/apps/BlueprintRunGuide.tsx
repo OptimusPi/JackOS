@@ -12,7 +12,7 @@ import {
   Trash2,
   Wand2,
 } from 'lucide-react';
-import { BalButton, BalPanel } from '../balatro-ui';
+import { BalBossChip, BalButton, BalPanel, BalVoucherSprite } from '../balatro-ui';
 import {
   decodeBossName,
   decodeItem,
@@ -49,7 +49,7 @@ export interface BlueprintRunGuideProps {
   onToggleSimVoucher: (voucherKey: string) => void;
   onToggleSimLegendary: (legendaryKey: string) => void;
   onToggleSimShowman: (next: boolean) => void;
-  onJumpToAnte: (ante: number, subTab?: 'shop' | 'map' | 'pulls') => void;
+  onJumpToAnte: (ante: number, subTab?: 'efficiency' | 'shop' | 'map' | 'pulls') => void;
 }
 
 const S_TIER_JOKERS = new Set([
@@ -555,19 +555,20 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
               >
                 {/* Ante Header */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-white/10">
-                  <div className="flex flex-wrap items-center gap-2 min-w-0">
-                    <span className="rounded-[5px] border-b-2 border-[#b8352e] bg-[#fe5f55] px-2 py-0.5 text-[14px] font-bold text-white tabular-nums">
+                  <div className="flex flex-wrap items-center gap-3 min-w-0">
+                    <span className="rounded-[5px] border-b-2 border-[#b8352e] bg-[#fe5f55] px-2.5 py-0.5 text-[14px] font-bold text-white tabular-nums">
                       ANTE {group.ante}
                     </span>
-                    {group.bossName && (
-                      <span className="text-[13px] text-[#fe9892]">
-                        Boss: <strong className="font-normal text-[#fe5f55]">{group.bossName}</strong>
-                      </span>
-                    )}
+                    {group.bossName && <BalBossChip name={group.bossName} size={28} compact />}
                     {group.voucherName && (
-                      <span className="text-[13px] text-[#f5b841]">
-                        · Voucher: {group.voucherName}
-                      </span>
+                      <BalVoucherSprite
+                        name={group.voucherName}
+                        width={24}
+                        active={voucherApplied}
+                        onClick={
+                          simVoucherKey ? () => onToggleSimVoucher(simVoucherKey) : undefined
+                        }
+                      />
                     )}
                   </div>
 
