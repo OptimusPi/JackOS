@@ -765,16 +765,21 @@ function numberArrayToSet(val: unknown): Set<number> | null {
 }
 
 /**
- * Match a 0-based engine slot against a YAML sources list.
- * Accepts modern 0-based lists ([0,1,2,3]) and legacy 1-based lists ([1,2,3,4]).
+ * Normalize YAML source slot lists to 0-based engine indices.
+ * - Already 0-based (contains 0) → keep
+ * - Contiguous legacy 1…N (e.g. shop4 `[1,2,3,4]`) → subtract 1
+ * - Anything else (sparse `[2,5]`, lone `[3]`) → treat as 0-based as written
  */
+function normalizeSourceSlots(allowed: Set<number>): Set<number> {
+  const vals = Array.from(allowed).sort((a, b) => a - b);
+  if (vals.length === 0 || vals[0] === 0) return allowed;
+  const contiguousOneBased = vals.every((v, i) => v === i + 1);
+  if (contiguousOneBased) return new Set(vals.map((v) => v - 1));
+  return allowed;
+}
+
 function slotSetMatches(allowed: Set<number>, zeroBasedSlot: number): boolean {
-  if (allowed.has(zeroBasedSlot)) return true;
-  if (allowed.has(zeroBasedSlot + 1)) {
-    const vals = Array.from(allowed);
-    if (vals.length > 0 && vals.every((n) => n >= 1)) return true;
-  }
-  return false;
+  return normalizeSourceSlots(allowed).has(zeroBasedSlot);
 }
 
 function entryMatchesClauseKind(entry: EvalCardEntry, pk: string): boolean {

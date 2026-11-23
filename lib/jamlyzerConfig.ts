@@ -9,6 +9,15 @@ export type ShopDepthMode = 'deep' | '36' | '50' | '15';
 export const DEFAULT_MAX_ANTE = 16;
 export const DEFAULT_SHOP_DEPTH: ShopDepthMode = 'deep';
 
+export type AnteDepthOption = 8 | 16 | 25 | 39;
+
+export function anteDepthFromMax(n: number): AnteDepthOption {
+  if (n >= 39) return 39;
+  if (n >= 25) return 25;
+  if (n >= 16) return 16;
+  return 8;
+}
+
 /** Engine shopSlots: 0 = defaults (15 in antes 0–1, 50 later). */
 export function shopDepthToSlots(mode: ShopDepthMode): number {
   switch (mode) {
@@ -128,6 +137,43 @@ export function buildShareUrl(origin: string, opts: {
   params.set('maxAnte', String(opts.maxAnte));
   if (opts.seedIndex > 0) params.set('seedIndex', String(opts.seedIndex));
   return `${origin}/?${params.toString()}`;
+}
+
+/** Single-seed or pile share URL for the analyzer address bar. */
+export function syncAnalyzerLocation(opts: {
+  origin: string;
+  seed: string;
+  deck: string;
+  stake: string;
+  maxAnte: number;
+  queue?: readonly string[] | null;
+}): string {
+  const queue = opts.queue && opts.queue.length > 1 ? Array.from(opts.queue) : null;
+  if (queue) {
+    const idx = Math.max(0, queue.indexOf(opts.seed));
+    const href = buildShareUrl(opts.origin, {
+      seeds: queue,
+      seedIndex: idx,
+      deck: opts.deck,
+      stake: opts.stake,
+      maxAnte: opts.maxAnte,
+    });
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, '', href);
+    }
+    return href;
+  }
+
+  const qs = new URLSearchParams();
+  if (opts.deck !== 'Ghost') qs.set('deck', formatDeckForUrl(opts.deck));
+  if (opts.stake !== 'White') qs.set('stake', formatStakeForUrl(opts.stake));
+  if (opts.maxAnte !== DEFAULT_MAX_ANTE) qs.set('maxAnte', String(opts.maxAnte));
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  const href = `/seed/${encodeURIComponent(opts.seed)}${suffix}`;
+  if (typeof window !== 'undefined') {
+    window.history.replaceState({}, '', href);
+  }
+  return opts.origin + href;
 }
 
 const SEED_TOKEN = /^[A-Za-z0-9_-]{1,24}$/;

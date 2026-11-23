@@ -109,16 +109,18 @@ import {
   getMotelyError,
 } from '../../lib/motelySprites';
 import {
+  AnteDepthOption,
   DEFAULT_MAX_ANTE,
   DEFAULT_SHOP_DEPTH,
   ShopDepthMode,
+  anteDepthFromMax,
   buildJamlyzerAnalyzePayload,
   buildShareUrl,
   jamlyzerEventRolls,
   parseJackOsUrl,
-  parseSeedPaste,
   parseSeedPasteWithMeta,
   shopDepthToSlots,
+  syncAnalyzerLocation,
 } from '../../lib/jamlyzerConfig';
 import { SeedShouldHitStrip } from './SeedShouldHitStrip';
 import {
@@ -168,9 +170,19 @@ type AnalyzerSubTab =
   | 'events';
 type EditorLayoutMode = 'split' | 'visual' | 'code';
 type ClauseKind = keyof typeof JAML_CLAUSE_ITEMS;
-type AnteDepthOption = 8 | 16 | 25 | 39;
-
 const ANTE_DEPTH_OPTIONS: readonly AnteDepthOption[] = [8, 16, 25, 39];
+
+type AnalyzeSeedOptions = {
+  seed: string;
+  deck?: string;
+  stake?: string;
+  with?: MotelyWith;
+  syncUrl?: boolean;
+  maxAnte?: AnteDepthOption;
+  shopDepth?: ShopDepthMode;
+  /** Explicit pile for ?seeds= sync (avoids stale loadedJamlSeeds). */
+  queue?: string[] | null;
+};
 
 const VIBE_PRESETS: readonly { value: BackdropPreset; label: string }[] = [
   { value: 'felt', label: 'Casino Felt' },
@@ -807,18 +819,8 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     initialQuery?.ante && initialQuery.ante >= 0 && initialQuery.ante <= 39 ? initialQuery.ante : 1
   );
   const [analyzerMaxAnte, setAnalyzerMaxAnte] = useState<AnteDepthOption>(() => {
-    if (initialQuery?.urlMaxAnte) {
-      const m = initialQuery.urlMaxAnte;
-      if (m >= 39) return 39;
-      if (m >= 25) return 25;
-      if (m >= 16) return 16;
-      return 8;
-    }
-    const a = initialQuery?.ante ?? DEFAULT_MAX_ANTE;
-    if (a > 25) return 39;
-    if (a > 16) return 25;
-    if (a > 8) return 16;
-    return DEFAULT_MAX_ANTE >= 16 ? 16 : 8;
+    if (initialQuery?.urlMaxAnte) return anteDepthFromMax(initialQuery.urlMaxAnte);
+    return anteDepthFromMax(initialQuery?.ante ?? DEFAULT_MAX_ANTE);
   });
   const [analyzerShopDepth, setAnalyzerShopDepth] = useState<ShopDepthMode>(DEFAULT_SHOP_DEPTH);
   const [seedPilePaste, setSeedPilePaste] = useState<string>(() =>
@@ -1027,17 +1029,10 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
   }, [commitFilterUpdate, showCleanupFeedback]);
 
   const analyzeSeedNow = useCallback(
-    (
-      rawSeed: string,
-      targetDeck: string = deck,
-      targetStake: string = stake,
-      withOverride?: MotelyWith,
-      syncUrl: boolean = false,
-      maxAnteOverride?: AnteDepthOption,
-      shopDepthOverride?: ShopDepthMode,
-      urlQueueOverride?: string[] | null
-    ) => {
-      const multiTokens = rawSeed
+    (opts: AnalyzeSeedOptions) => {
+      const targetDeck = opts.deck ?? deck;
+      const targetStake = opts.stake ?? stake;
+      const multiTokens = opts.seed
         .split(/[,\s\n]+/)
         .map((s) => s.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, ''))
         .filter(Boolean);
@@ -1049,12 +1044,12 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       }
       if (dedupedMulti.length > 1) {
         setLoadedJamlSeeds(dedupedMulti);
-        setLoadedJamlName(`Multi-Seed Queue`);
+        setLoadedJamlName('Seed pile');
         setSeedPilePaste(dedupedMulti.join(', '));
       }
 
-      const targetMaxAnte = maxAnteOverride ?? analyzerMaxAnte;
-      const targetShopDepth = shopDepthOverride ?? analyzerShopDepth;
+      const targetMaxAnte = opts.maxAnte ?? analyzerMaxAnte;
+      const targetShopDepth = opts.shopDepth ?? analyzerShopDepth;
       setAnalyzerError(null);
       try {
         const payload = buildJamlyzerAnalyzePayload(
@@ -1064,7 +1059,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
           targetMaxAnte
         );
         const cfg = JamlConfigLoader.fromJaml(JSON.stringify(payload));
-        const mw = withOverride ?? buildMotelyWith();
+        const mw = opts.with ?? buildMotelyWith();
         const shopSlots = shopDepthToSlots(targetShopDepth);
         const list = MotelyJamlyzer.analyze(cfg, jamlyzerEventRolls(targetMaxAnte), shopSlots, mw);
         if (!list.length) {
@@ -1089,41 +1084,23 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
           result: first,
           shopByAnte,
         });
-        if (syncUrl && typeof window !== 'undefined') {
+        if (opts.syncUrl && typeof window !== 'undefined') {
           const queue =
-            urlQueueOverride && urlQueueOverride.length > 1
-              ? urlQueueOverride
+            opts.queue && opts.queue.length > 1
+              ? opts.queue
               : dedupedMulti.length > 1
               ? dedupedMulti
               : loadedJamlSeeds.length > 1
               ? loadedJamlSeeds
-              : [];
-          const origin = window.location.origin;
-          if (queue.length > 1) {
-            const idx = Math.max(0, queue.indexOf(cleanSeed));
-            window.history.replaceState(
-              {},
-              '',
-              buildShareUrl(origin, {
-                seeds: queue,
-                seedIndex: idx,
-                deck: targetDeck,
-                stake: targetStake,
-                maxAnte: targetMaxAnte,
-              })
-            );
-          } else {
-            const qs = new URLSearchParams();
-            if (targetDeck !== 'Ghost') qs.set('deck', `${targetDeck} Deck`);
-            if (targetStake !== 'White') qs.set('stake', `${targetStake} Stake`);
-            if (targetMaxAnte !== DEFAULT_MAX_ANTE) qs.set('maxAnte', String(targetMaxAnte));
-            const querySuffix = qs.toString() ? `?${qs.toString()}` : '';
-            window.history.replaceState(
-              {},
-              '',
-              `/seed/${encodeURIComponent(cleanSeed)}${querySuffix}`
-            );
-          }
+              : null;
+          syncAnalyzerLocation({
+            origin: window.location.origin,
+            seed: cleanSeed,
+            deck: targetDeck,
+            stake: targetStake,
+            maxAnte: targetMaxAnte,
+            queue,
+          });
         }
       } catch (e) {
         setAnalyzerError(getMotelyError(e));
@@ -1173,16 +1150,13 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
         setSearchMode('seedlist');
         setActiveTab('analyzer');
         setAnalyzerSubTab('efficiency');
-        analyzeSeedNow(
-          extractedSeeds[0],
-          nextDeck,
-          nextStake,
-          undefined,
-          true,
-          undefined,
-          undefined,
-          extractedSeeds.length > 1 ? extractedSeeds : null
-        );
+        analyzeSeedNow({
+          seed: extractedSeeds[0],
+          deck: nextDeck,
+          stake: nextStake,
+          syncUrl: true,
+          queue: extractedSeeds.length > 1 ? extractedSeeds : null,
+        });
         showCleanupFeedback(
           `Loaded ${cleanFileName}: ${extractedSeeds.length} seed${extractedSeeds.length > 1 ? 's' : ''} ready in Analyzer`
         );
@@ -1244,16 +1218,13 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     setSeedListText(embeddedJamlSeeds.join(', '));
     setActiveTab('analyzer');
     setAnalyzerSubTab('efficiency');
-    analyzeSeedNow(
-      embeddedJamlSeeds[0],
+    analyzeSeedNow({
+      seed: embeddedJamlSeeds[0],
       deck,
       stake,
-      undefined,
-      true,
-      undefined,
-      undefined,
-      embeddedJamlSeeds.length > 1 ? embeddedJamlSeeds : null
-    );
+      syncUrl: true,
+      queue: embeddedJamlSeeds.length > 1 ? embeddedJamlSeeds : null,
+    });
   }, [embeddedJamlSeeds, parsedFilter, deck, stake, analyzeSeedNow]);
 
   const handleLoadSeedPile = useCallback(() => {
@@ -1274,8 +1245,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     );
     let depthOverride: AnteDepthOption | undefined;
     if (extras.maxAnte) {
-      const m = extras.maxAnte;
-      depthOverride = m >= 39 ? 39 : m >= 25 ? 25 : m >= 16 ? 16 : 8;
+      depthOverride = anteDepthFromMax(extras.maxAnte);
       setAnalyzerMaxAnte(depthOverride);
     }
     setLoadedJamlSeeds(seeds);
@@ -1283,16 +1253,14 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     setSeedPilePaste(seeds.join(', '));
     const startIdx = Math.min(extras.seedIndex ?? 0, seeds.length - 1);
     const startSeed = seeds[startIdx] ?? seeds[0];
-    analyzeSeedNow(
-      startSeed,
-      pileDeck,
-      pileStake,
-      undefined,
-      true,
-      depthOverride,
-      undefined,
-      seeds.length > 1 ? seeds : null
-    );
+    analyzeSeedNow({
+      seed: startSeed,
+      deck: pileDeck,
+      stake: pileStake,
+      syncUrl: true,
+      maxAnte: depthOverride,
+      queue: seeds.length > 1 ? seeds : null,
+    });
   }, [seedPilePaste, deck, stake, analyzeSeedNow, commitFilterUpdate]);
 
   useEffect(() => {
@@ -1307,16 +1275,13 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
         initialQuery?.urlSeeds && initialQuery.urlSeeds.length > 1
           ? initialQuery.urlSeeds
           : null;
-      analyzeSeedNow(
-        initialQuery?.seed || 'ALEEB',
-        initialQuery?.deck || 'Ghost',
-        initialQuery?.stake || 'White',
-        undefined,
-        Boolean(initialQuery?.seed || urlPile),
-        undefined,
-        undefined,
-        urlPile
-      );
+      analyzeSeedNow({
+        seed: initialQuery?.seed || 'ALEEB',
+        deck: initialQuery?.deck || 'Ghost',
+        stake: initialQuery?.stake || 'White',
+        syncUrl: Boolean(initialQuery?.seed || urlPile),
+        queue: urlPile,
+      });
     }
   }, [bootState, analyzed, analyzeSeedNow, initialQuery]);
 
@@ -1328,12 +1293,12 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       nextLegendaries: string[]
     ) => {
       if (!analyzed || bootState !== 'ready') return;
-      analyzeSeedNow(
-        analyzed.seed,
-        analyzed.deck,
-        analyzed.stake,
-        buildMotelyWith(nextLuck, nextShowman, nextVouchers, nextLegendaries)
-      );
+      analyzeSeedNow({
+        seed: analyzed.seed,
+        deck: analyzed.deck,
+        stake: analyzed.stake,
+        with: buildMotelyWith(nextLuck, nextShowman, nextVouchers, nextLegendaries),
+      });
     },
     [analyzed, bootState, analyzeSeedNow, buildMotelyWith]
   );
@@ -1588,7 +1553,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       updateFilterDeckStake(f, nextDeck as MotelyDeckName, stake as MotelyStakeName)
     );
     if (analyzed) {
-      analyzeSeedNow(analyzed.seed, nextDeck, stake);
+      analyzeSeedNow({ seed: analyzed.seed, deck: nextDeck, stake });
     }
   };
 
@@ -1599,7 +1564,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       updateFilterDeckStake(f, deck as MotelyDeckName, nextStake as MotelyStakeName)
     );
     if (analyzed) {
-      analyzeSeedNow(analyzed.seed, deck, nextStake);
+      analyzeSeedNow({ seed: analyzed.seed, deck, stake: nextStake });
     }
   };
 
@@ -1732,7 +1697,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
           });
           if (!firstSeedCaptured && autoAnalyzeFirst) {
             firstSeedCaptured = true;
-            analyzeSeedNow(s, deck, stake);
+            analyzeSeedNow({ seed: s, deck, stake });
           }
         })
         .withSeedMatchCallback((seed: string) => {
@@ -1744,7 +1709,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
           setResults((prev) => [...prev, { seed: s, score: 0, rider: cachedRider }]);
           if (!firstSeedCaptured && autoAnalyzeFirst) {
             firstSeedCaptured = true;
-            analyzeSeedNow(s, deck, stake);
+            analyzeSeedNow({ seed: s, deck, stake });
           }
         });
 
@@ -1878,23 +1843,9 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       const nextIdx = (baseIdx + delta + list.length) % list.length;
       const nextSeed = list[nextIdx];
       playCardClick(delta > 0 ? 1.12 : 0.94);
-      analyzeSeedNow(nextSeed, deck, stake, undefined, true);
-      if (typeof window !== 'undefined' && list.length > 1) {
-        const origin = window.location.origin;
-        window.history.replaceState(
-          {},
-          '',
-          buildShareUrl(origin, {
-            seeds: list,
-            seedIndex: nextIdx,
-            deck,
-            stake,
-            maxAnte: analyzerMaxAnte,
-          })
-        );
-      }
+      analyzeSeedNow({ seed: nextSeed, deck, stake, syncUrl: true, queue: list });
     },
-    [activeSeedQueue.seeds, analyzed?.seed, analyzeSeedNow, deck, stake, analyzerMaxAnte]
+    [activeSeedQueue.seeds, analyzed?.seed, analyzeSeedNow, deck, stake]
   );
 
   useEffect(() => {
@@ -2491,7 +2442,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           playRerollSweep();
-                          analyzeSeedNow(seedInput, deck, stake, undefined, true);
+                          analyzeSeedNow({ seed: seedInput, deck, stake, syncUrl: true });
                         }
                       }}
                       placeholder="ALEEB"
@@ -2503,7 +2454,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                     size="sm"
                     onClick={() => {
                       playRerollSweep();
-                      analyzeSeedNow(seedInput, deck, stake, undefined, true);
+                      analyzeSeedNow({ seed: seedInput, deck, stake, syncUrl: true });
                     }}
                   >
                     Go
@@ -2566,17 +2517,50 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
 
                 <div className="flex flex-col gap-1.5">
                   <BalTextArea
-                    label="Seed pile (paste or URL)"
+                    label="Seed pile"
                     mono
                     rows={2}
                     value={seedPilePaste}
                     onChange={(e) => setSeedPilePaste(e.target.value)}
-                    placeholder="EFPEEOX5, ALEEB — or load ?seeds= from the address bar"
+                    placeholder="Paste seeds or a ?seeds= share link"
                   />
-                  <BalButton tone="slate" size="xs" onClick={handleLoadSeedPile}>
-                    <Link2 size={13} />
-                    <span>Load pile into analyzer</span>
-                  </BalButton>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <BalButton tone="slate" size="xs" block onClick={handleLoadSeedPile}>
+                      <Link2 size={13} />
+                      <span>Load pile</span>
+                    </BalButton>
+                    <BalButton
+                      tone={copiedKey === 'pile-url' ? 'green' : 'slate'}
+                      size="xs"
+                      block
+                      disabled={activeSeedQueue.seeds.length < 2 && !analyzed}
+                      onClick={() => {
+                        if (typeof window === 'undefined') return;
+                        const pile =
+                          activeSeedQueue.seeds.length > 1
+                            ? activeSeedQueue.seeds
+                            : analyzed
+                            ? [analyzed.seed]
+                            : parseSeedPasteWithMeta(seedPilePaste).seeds;
+                        if (pile.length === 0) return;
+                        const idx = Math.max(0, pile.indexOf(analyzed?.seed ?? pile[0]));
+                        const href = buildShareUrl(window.location.origin, {
+                          seeds: pile,
+                          seedIndex: idx,
+                          deck,
+                          stake,
+                          maxAnte: analyzerMaxAnte,
+                        });
+                        navigator.clipboard?.writeText(href).catch(() => {});
+                        setCopiedKey('pile-url');
+                        window.setTimeout(() => setCopiedKey((k) => (k === 'pile-url' ? null : k)), 1600);
+                        playChipChime(1.2);
+                      }}
+                    >
+                      {copiedKey === 'pile-url' ? <Check size={13} /> : <Share2 size={13} />}
+                      <span>{copiedKey === 'pile-url' ? 'Copied' : 'Copy link'}</span>
+                    </BalButton>
+                  </div>
                 </div>
 
                 {analyzed && (
@@ -2794,14 +2778,12 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                             onClick={() => {
                               playRerollSweep();
                               setAnalyzerMaxAnte(25);
-                              analyzeSeedNow(
-                                analyzed.seed,
-                                analyzed.deck,
-                                analyzed.stake,
-                                undefined,
-                                false,
-                                25
-                              );
+                              analyzeSeedNow({
+                                seed: analyzed.seed,
+                                deck: analyzed.deck,
+                                stake: analyzed.stake,
+                                maxAnte: 25,
+                              });
                             }}
                           >
                             Scan to A25
@@ -4189,7 +4171,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                                 size="xs"
                                 onClick={() => {
                                   playCardClick(1.12);
-                                  analyzeSeedNow(result.seed, deck, stake, undefined, true);
+                                  analyzeSeedNow({ seed: result.seed, deck, stake, syncUrl: true });
                                   setAnalyzerSubTab('efficiency');
                                   setActiveTab('analyzer');
                                 }}
@@ -4201,7 +4183,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                                 size="xs"
                                 onClick={() => {
                                   playCardClick(1.15);
-                                  analyzeSeedNow(result.seed, deck, stake, undefined, true);
+                                  analyzeSeedNow({ seed: result.seed, deck, stake, syncUrl: true });
                                   setAnalyzerSubTab('card');
                                   setActiveTab('analyzer');
                                 }}
@@ -4666,7 +4648,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                                 playCardClick(1.1);
                                 setDeck(entry.deck);
                                 setStake(entry.stake);
-                                analyzeSeedNow(entry.seed, entry.deck, entry.stake, undefined, true);
+                                analyzeSeedNow({ seed: entry.seed, deck: entry.deck, stake: entry.stake, syncUrl: true });
                                 setAnalyzerSubTab('efficiency');
                                 setActiveTab('analyzer');
                               }}
@@ -4680,7 +4662,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                                 playCardClick(1.15);
                                 setDeck(entry.deck);
                                 setStake(entry.stake);
-                                analyzeSeedNow(entry.seed, entry.deck, entry.stake, undefined, true);
+                                analyzeSeedNow({ seed: entry.seed, deck: entry.deck, stake: entry.stake, syncUrl: true });
                                 setAnalyzerSubTab('card');
                                 setActiveTab('analyzer');
                               }}
@@ -4830,14 +4812,13 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                     playRerollSweep();
                     setAnalyzerMaxAnte(depth);
                     if (analyzed) {
-                      analyzeSeedNow(
-                        analyzed.seed,
-                        analyzed.deck,
-                        analyzed.stake,
-                        undefined,
-                        true,
-                        depth
-                      );
+                      analyzeSeedNow({
+                        seed: analyzed.seed,
+                        deck: analyzed.deck,
+                        stake: analyzed.stake,
+                        syncUrl: true,
+                        maxAnte: depth,
+                      });
                     }
                   }}
                 >
@@ -4869,15 +4850,13 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                     playRerollSweep();
                     setAnalyzerShopDepth(mode);
                     if (analyzed) {
-                      analyzeSeedNow(
-                        analyzed.seed,
-                        analyzed.deck,
-                        analyzed.stake,
-                        undefined,
-                        true,
-                        undefined,
-                        mode
-                      );
+                      analyzeSeedNow({
+                        seed: analyzed.seed,
+                        deck: analyzed.deck,
+                        stake: analyzed.stake,
+                        syncUrl: true,
+                        shopDepth: mode,
+                      });
                     }
                   }}
                 >
@@ -4964,18 +4943,17 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                 setSimLegendaries([]);
                 setAnalyzerMaxAnte(8);
                 if (analyzed) {
-                  analyzeSeedNow(
-                    analyzed.seed,
-                    analyzed.deck,
-                    analyzed.stake,
-                    {
+                  analyzeSeedNow({
+                    seed: analyzed.seed,
+                    deck: analyzed.deck,
+                    stake: analyzed.stake,
+                    with: {
                       luck: MotelyLuck.X1,
                       jokers: new Int32Array(0),
                       vouchers: new Int32Array(0),
                     },
-                    false,
-                    8
-                  );
+                    maxAnte: 8,
+                  });
                 }
               }}
             >
