@@ -11,11 +11,13 @@ export const DEFAULT_SHOP_DEPTH: ShopDepthMode = 'deep';
 
 export type AnteDepthOption = 8 | 16 | 25 | 39;
 
-export function anteDepthFromMax(n: number): AnteDepthOption {
-  if (n >= 39) return 39;
-  if (n >= 25) return 25;
-  if (n >= 16) return 16;
-  return 8;
+/** Smallest preset depth that includes ante `n` (rounds up so ?ante=10 → 16). */
+export function anteDepthCovering(n: number): AnteDepthOption {
+  const t = Math.max(0, Math.min(39, Math.floor(n)));
+  if (t <= 8) return 8;
+  if (t <= 16) return 16;
+  if (t <= 25) return 25;
+  return 39;
 }
 
 /** Engine shopSlots: 0 = defaults (15 in antes 0–1, 50 later). */

@@ -113,7 +113,7 @@ import {
   DEFAULT_MAX_ANTE,
   DEFAULT_SHOP_DEPTH,
   ShopDepthMode,
-  anteDepthFromMax,
+  anteDepthCovering,
   buildJamlyzerAnalyzePayload,
   buildShareUrl,
   jamlyzerEventRolls,
@@ -819,8 +819,9 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     initialQuery?.ante && initialQuery.ante >= 0 && initialQuery.ante <= 39 ? initialQuery.ante : 1
   );
   const [analyzerMaxAnte, setAnalyzerMaxAnte] = useState<AnteDepthOption>(() => {
-    if (initialQuery?.urlMaxAnte) return anteDepthFromMax(initialQuery.urlMaxAnte);
-    return anteDepthFromMax(initialQuery?.ante ?? DEFAULT_MAX_ANTE);
+    if (initialQuery?.urlMaxAnte) return anteDepthCovering(initialQuery.urlMaxAnte);
+    // ?ante=N must load a depth that includes N (round up), not truncate to 8.
+    return anteDepthCovering(initialQuery?.ante ?? DEFAULT_MAX_ANTE);
   });
   const [analyzerShopDepth, setAnalyzerShopDepth] = useState<ShopDepthMode>(DEFAULT_SHOP_DEPTH);
   const [seedPilePaste, setSeedPilePaste] = useState<string>(() =>
@@ -1245,7 +1246,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     );
     let depthOverride: AnteDepthOption | undefined;
     if (extras.maxAnte) {
-      depthOverride = anteDepthFromMax(extras.maxAnte);
+      depthOverride = anteDepthCovering(extras.maxAnte);
       setAnalyzerMaxAnte(depthOverride);
     }
     setLoadedJamlSeeds(seeds);
@@ -2536,19 +2537,24 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                       disabled={activeSeedQueue.seeds.length < 2 && !analyzed}
                       onClick={() => {
                         if (typeof window === 'undefined') return;
-                        const pile =
-                          activeSeedQueue.seeds.length > 1
-                            ? activeSeedQueue.seeds
-                            : analyzed
-                            ? [analyzed.seed]
-                            : parseSeedPasteWithMeta(seedPilePaste).seeds;
+                        const current = analyzed?.seed;
+                        const queueHasCurrent =
+                          !!current &&
+                          activeSeedQueue.seeds.length > 1 &&
+                          activeSeedQueue.seeds.includes(current);
+                        const pasted = parseSeedPasteWithMeta(seedPilePaste).seeds;
+                        const pile = queueHasCurrent
+                          ? activeSeedQueue.seeds
+                          : current
+                          ? [current]
+                          : pasted;
                         if (pile.length === 0) return;
-                        const idx = Math.max(0, pile.indexOf(analyzed?.seed ?? pile[0]));
+                        const idx = Math.max(0, pile.indexOf(current ?? pile[0]));
                         const href = buildShareUrl(window.location.origin, {
                           seeds: pile,
                           seedIndex: idx,
-                          deck,
-                          stake,
+                          deck: analyzed?.deck ?? deck,
+                          stake: analyzed?.stake ?? stake,
                           maxAnte: analyzerMaxAnte,
                         });
                         navigator.clipboard?.writeText(href).catch(() => {});

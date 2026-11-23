@@ -1,5 +1,14 @@
 import assert from 'node:assert/strict';
-import { parseSeedPaste, parseSeedPasteWithMeta } from '../lib/jamlyzerConfig.ts';
+import {
+  anteDepthCovering,
+  parseSeedPaste,
+  parseSeedPasteWithMeta,
+} from '../lib/jamlyzerConfig.ts';
+
+assert.equal(anteDepthCovering(10), 16);
+assert.equal(anteDepthCovering(8), 8);
+assert.equal(anteDepthCovering(16), 16);
+assert.equal(anteDepthCovering(26), 39);
 
 const url =
   'https://example.com/?seeds=EFPEEOX5,ALEEB&deck=Ghost%20Deck&stake=White%20Stake&maxAnte=16&seedIndex=1';
