@@ -69,10 +69,10 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
       list.push({
         name: decodeJokerEnumName(leg.joker),
         edition: dec.edition,
-        location: `Soul Pack #${leg.packSlot + 1}`,
+        location: `Soul pack slot ${leg.packSlot}`,
         category: 'Joker',
         rarity: 'Legendary',
-        slot: leg.packSlot + 1,
+        slot: leg.packSlot,
         sourceKind: 'soul',
         item: leg.item,
         packSlot: leg.packSlot,
@@ -89,10 +89,10 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
           return {
             name: dec.name,
             edition: dec.edition,
-            location: `Shop #${idx + 1}`,
+            location: `Shop slot ${idx}`,
             category: dec.category,
             rarity: dec.category === 'Joker' ? getJokerRarity(dec.rawName) : null,
-            slot: idx + 1,
+            slot: idx,
             sourceKind: 'shop' as const,
             item: it,
             idx,
@@ -101,8 +101,8 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
 
         const packNames = a.packs.map((pk, pIdx) => ({
           name: decodePackName(pk.pack),
-          location: `Pack #${pIdx + 1} (${decodePackName(pk.pack)})`,
-          slot: pIdx + 1,
+          location: `Pack slot ${pIdx} (${decodePackName(pk.pack)})`,
+          slot: pIdx,
         }));
 
         const packEntries: (EvalCardEntry & { item: MotelyItem })[] = [];
@@ -114,15 +114,15 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
             : pkLower.includes('spectral')
             ? ('spectralPack' as const)
             : ('pack' as const);
-          pk.items.forEach((it) => {
+          pk.items.forEach((it, cIdx) => {
             const dec = decodeItem(it);
             packEntries.push({
               name: dec.name,
               edition: dec.edition,
-              location: `Pack #${pIdx + 1} (${pkName})`,
+              location: `Pack slot ${pIdx} card ${cIdx} (${pkName})`,
               category: dec.category,
               rarity: dec.category === 'Joker' ? getJokerRarity(dec.rawName) : null,
-              slot: pIdx + 1,
+              slot: pIdx,
               sourceKind,
               item: it,
             });
@@ -140,10 +140,10 @@ export const JamlSeedMap: React.FC<JamlSeedMapProps> = ({
             pullEntries.push({
               name: dec.name,
               edition: dec.edition,
-              location: `${prefix} #${idx + 1}`,
+              location: `${prefix} slot ${idx}`,
               category: dec.category,
               rarity: dec.category === 'Joker' ? getJokerRarity(dec.rawName) : null,
-              slot: idx + 1,
+              slot: idx,
               sourceKind,
             });
           });

@@ -18,6 +18,7 @@ import {
   decodeItem,
   decodeJokerEnumName,
   decodePackName,
+  decodeTagName,
   decodeVoucherName,
 } from '../../lib/motelySprites';
 import { playCardClick, playChipChime, playRerollSweep } from '../../lib/balatroSfx';
@@ -120,10 +121,23 @@ const SIM_VOUCHER_NAME_TO_KEY: Record<string, string> = {
 
 const LEGENDARY_SET = new Set(['Canio', 'Triboulet', 'Yorick', 'Chicot', 'Perkeo']);
 
+/** Classic Blueprint loop targets beyond raw S-tier. */
+const LOOP_JOKERS = new Set([
+  ...S_TIER_JOKERS,
+  'Diet Cola',
+  'Ankh',
+  'Showman',
+]);
+
+const LOOP_SPECTRALS = new Set(['Ankh', 'The Soul']);
+const LOOP_TAGS = new Set(['Negative Tag', 'Coupon Tag', 'Double Tag']);
+
 function extractShopSlotNumber(location: string, explicitIndex?: number): number | null {
   if (typeof explicitIndex === 'number' && explicitIndex >= 0) return explicitIndex + 1;
-  const m = location.match(/Shop #(\d+)/i);
-  return m ? Number(m[1]) : null;
+  const zero = location.match(/Shop slot (\d+)/i);
+  if (zero) return Number(zero[1]) + 1;
+  const legacy = location.match(/Shop #(\d+)/i);
+  return legacy ? Number(legacy[1]) : null;
 }
 
 /**
@@ -218,16 +232,30 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
       pushPick({
         key: `A${leg.ante}-soul-${leg.packSlot}-${idx}`,
         ante: leg.ante,
-        location: `Soul Pack #${leg.packSlot + 1}`,
+        location: `Soul pack slot ${leg.packSlot}`,
         name: legName,
         edition: dec.edition,
         legendaryKey: legName,
       });
     });
 
-    // 2. Scan Antes for S-Tier Jokers, Negative/Polychrome finds, and Key Vouchers
+    // 2. Scan Antes for loop jokers, tags, spectrals, editions, and key vouchers
     for (const a of result.antes) {
       if (a.ante < 1) continue;
+      const smallTag = decodeTagName(a.smallBlindTag);
+      const bigTag = decodeTagName(a.bigBlindTag);
+      for (const tagName of [smallTag, bigTag]) {
+        if (LOOP_TAGS.has(tagName)) {
+          const which = tagName === smallTag ? 'Small blind tag' : 'Big blind tag';
+          pushPick({
+            key: `A${a.ante}-tag-${which}-${tagName}`,
+            ante: a.ante,
+            location: which,
+            name: tagName,
+            edition: null,
+          });
+        }
+      }
       const voucherName = decodeVoucherName(a.voucher);
       if (KEY_VOUCHERS.has(voucherName)) {
         pushPick({
@@ -241,17 +269,19 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
       }
 
       const shopList = shopByAnte[a.ante] ?? a.shopItems;
-      const scanDepth = a.ante <= 3 ? Math.min(shopList.length, 15) : Math.min(shopList.length, 10);
-      for (let idx = 0; idx < scanDepth; idx++) {
+      for (let idx = 0; idx < shopList.length; idx++) {
         const it = shopList[idx];
         const dec = decodeItem(it);
         const isBigEdition =
           dec.category === 'Joker' && (dec.edition === 'Negative' || dec.edition === 'Polychrome');
-        if (S_TIER_JOKERS.has(dec.name) || isBigEdition) {
+        const isLoop =
+          LOOP_JOKERS.has(dec.name) ||
+          (dec.category === 'Spectral' && LOOP_SPECTRALS.has(dec.name));
+        if (isLoop || isBigEdition) {
           pushPick({
             key: `A${a.ante}-shop-${idx}`,
             ante: a.ante,
-            location: `Shop #${idx + 1}`,
+            location: `Shop slot ${idx}`,
             name: dec.name,
             edition: dec.edition,
             shopSlotIndex: idx,
@@ -259,19 +289,21 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
         }
       }
 
-      // Check packs for S-Tier Jokers or Negative/Polychrome Jokers
       a.packs.forEach((pk, pIdx) => {
         const pkName = decodePackName(pk.pack);
         pk.items.forEach((it, cIdx) => {
           const dec = decodeItem(it);
-          if (dec.name === 'The Soul') return; // already captured with exact legendary above
+          if (dec.name === 'The Soul') return;
           const isBigEdition =
             dec.category === 'Joker' && (dec.edition === 'Negative' || dec.edition === 'Polychrome');
-          if (S_TIER_JOKERS.has(dec.name) || isBigEdition) {
+          const isLoop =
+            LOOP_JOKERS.has(dec.name) ||
+            (dec.category === 'Spectral' && LOOP_SPECTRALS.has(dec.name));
+          if (isLoop || isBigEdition) {
             pushPick({
               key: `A${a.ante}-pack-${pIdx}-${cIdx}`,
               ante: a.ante,
-              location: `Pack #${pIdx + 1} (${pkName})`,
+              location: `Pack slot ${pIdx} card ${cIdx} (${pkName})`,
               name: dec.name,
               edition: dec.edition,
             });
@@ -281,11 +313,13 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
     }
 
     const locationOrder = (loc: string): number => {
+      const l = loc.toLowerCase();
       if (loc === 'Ante Voucher') return 0;
-      if (loc.startsWith('Shop #')) return 1;
-      if (loc.startsWith('Pack #')) return 2;
-      if (loc.startsWith('Soul Pack')) return 3;
-      return 4;
+      if (l.includes('blind tag')) return 1;
+      if (l.startsWith('shop slot')) return 2;
+      if (l.startsWith('pack slot')) return 3;
+      if (l.includes('soul pack')) return 4;
+      return 5;
     };
     generated.sort(
       (a, b) =>
@@ -372,7 +406,7 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
       if (g.bossWarning) lines.push(`> ⚠️ **Boss Alert:** ${g.bossWarning}`);
       if (g.maxShopSlot > 0) {
         lines.push(
-          `> Reroll budget to Shop #${g.maxShopSlot}: **${g.anteReroll.rerolls} rerolls ($${g.anteReroll.cost})**`
+          `> Reroll budget to shop slot ${Math.max(0, g.maxShopSlot - 1)}: **${g.anteReroll.rerolls} rerolls ($${g.anteReroll.cost})**`
         );
       }
       for (const p of g.picks) {

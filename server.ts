@@ -19,6 +19,11 @@ import bootsharp, {
 } from 'motely-wasm';
 import { buildSeedOgElement, parseSeedOgParams } from './lib/ogCardTemplate.ts';
 import { formatDisplayName } from './lib/motelyUtils.ts';
+import {
+  buildJamlyzerAnalyzePayload,
+  jamlyzerEventRolls,
+  shopDepthToSlots,
+} from './lib/jamlyzerConfig.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,12 +92,9 @@ async function analyzeSeedOnServer(
 
   try {
     await ensureServerMotely();
-    const payload: Record<string, unknown> = { deck, stake, seeds: [cleanSeed] };
-    if (targetAnte > 8) {
-      payload.should = [{ joker: 'Any', antes: [0, targetAnte] }];
-    }
+    const payload = buildJamlyzerAnalyzePayload(deck, stake, [cleanSeed], targetAnte);
     const cfg = JamlConfigLoader.fromJaml(JSON.stringify(payload));
-    const list = MotelyJamlyzer.analyze(cfg, 8, 8, {
+    const list = MotelyJamlyzer.analyze(cfg, jamlyzerEventRolls(targetAnte), shopDepthToSlots('deep'), {
       luck: MotelyLuck.X1,
       jokers: new Int32Array(0),
       vouchers: new Int32Array(0),

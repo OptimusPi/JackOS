@@ -573,26 +573,26 @@ export function buildTypedClause(params: {
   // Real typed source blocks from motely-wasm/jaml
   if (kind === 'legendaryJoker' && sourcePreset === 'soulPacks') {
     const src: JamlLegendaryJokerSourceConfig = {
-      arcanaPacks: [1, 2],
-      spectralPacks: [1, 2],
+      arcanaPacks: [0, 1],
+      spectralPacks: [0, 1],
     };
     raw.sources = src;
   } else if ((kind === 'joker' || kind === 'rareJoker') && sourcePreset !== 'any') {
     const src: JamlJokerSourceConfig = {};
-    if (sourcePreset === 'shop4') src.shopItems = [1, 2, 3, 4];
-    else if (sourcePreset === 'shop10') src.shopItems = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    else if (sourcePreset === 'boosterPacks') src.boosterPacks = [1, 2, 3, 4];
+    if (sourcePreset === 'shop4') src.shopItems = [0, 1, 2, 3];
+    else if (sourcePreset === 'shop10') src.shopItems = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    else if (sourcePreset === 'boosterPacks') src.boosterPacks = [0, 1, 2, 3];
     else if (sourcePreset === 'judgementWraith') {
-      src.judgement = [1, 2];
-      src.wraith = [1, 2];
+      src.judgement = [0, 1];
+      src.wraith = [0, 1];
     }
     if (Object.keys(src).length > 0) raw.sources = src;
   } else if ((kind === 'tarotCard' || kind === 'spectralCard') && sourcePreset === 'shop4') {
-    raw.sources = { shopItems: [1, 2, 3, 4] };
+    raw.sources = { shopItems: [0, 1, 2, 3] };
   } else if ((kind === 'tarotCard' || kind === 'spectralCard') && sourcePreset === 'shop10') {
-    raw.sources = { shopItems: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] };
+    raw.sources = { shopItems: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] };
   } else if ((kind === 'tarotCard' || kind === 'spectralCard') && sourcePreset === 'boosterPacks') {
-    raw.sources = { boosterPacks: [1, 2, 3, 4] };
+    raw.sources = { boosterPacks: [0, 1, 2, 3] };
   }
 
   if (section === 'should') {
@@ -764,6 +764,11 @@ function numberArrayToSet(val: unknown): Set<number> | null {
   return nums.length > 0 ? new Set(nums) : null;
 }
 
+/** Match a 0-based engine slot against a YAML sources list (engine-native, no remapping). */
+function slotSetMatches(allowed: Set<number>, zeroBasedSlot: number): boolean {
+  return allowed.has(zeroBasedSlot);
+}
+
 function entryMatchesClauseKind(entry: EvalCardEntry, pk: string): boolean {
   if (pk === 'joker' || pk === 'jokers') {
     return !entry.category || entry.category === 'Joker';
@@ -805,7 +810,7 @@ function entryMatchesSources(
   );
   if (keys.length === 0) return true;
 
-  const slot = entry.slot ?? 1;
+  const slot = entry.slot ?? 0;
   const kind = entry.sourceKind;
 
   if (kind === 'shop') {
@@ -815,16 +820,18 @@ function entryMatchesSources(
       numberArrayToSet(sourcesObj.commonShopJokers) ??
       numberArrayToSet(sourcesObj.uncommonShopJokers) ??
       numberArrayToSet(sourcesObj.rareShopJokers);
-    return shopSlots ? shopSlots.has(slot) : false;
+    return shopSlots ? slotSetMatches(shopSlots, slot) : false;
   }
 
   if (kind === 'pack' || kind === 'arcanaPack' || kind === 'spectralPack' || kind === 'soul') {
     const bpSlots = numberArrayToSet(sourcesObj.boosterPacks);
-    if (bpSlots && bpSlots.has(slot)) return true;
+    if (bpSlots && slotSetMatches(bpSlots, slot)) return true;
     const arcSlots = numberArrayToSet(sourcesObj.arcanaPacks);
-    if (arcSlots && (kind === 'arcanaPack' || kind === 'soul') && arcSlots.has(slot)) return true;
+    if (arcSlots && (kind === 'arcanaPack' || kind === 'soul') && slotSetMatches(arcSlots, slot))
+      return true;
     const specSlots = numberArrayToSet(sourcesObj.spectralPacks);
-    if (specSlots && (kind === 'spectralPack' || kind === 'soul') && specSlots.has(slot)) return true;
+    if (specSlots && (kind === 'spectralPack' || kind === 'soul') && slotSetMatches(specSlots, slot))
+      return true;
     return false;
   }
 
@@ -842,7 +849,7 @@ function entryMatchesSources(
 
   if (kind && pullKeyMap[kind]) {
     const allowed = numberArrayToSet(sourcesObj[pullKeyMap[kind]]);
-    return allowed ? allowed.has(slot) : false;
+    return allowed ? slotSetMatches(allowed, slot) : false;
   }
 
   return false;
@@ -965,7 +972,7 @@ export function evaluateFilterOnSeed(
         const packs = a.packNames ?? [];
         const allowedPackSlots = numberArrayToSet(sourcesObj?.boosterPacks);
         for (const p of packs) {
-          if (allowedPackSlots && !allowedPackSlots.has(p.slot)) continue;
+          if (allowedPackSlots && !slotSetMatches(allowedPackSlots, p.slot)) continue;
           if (isAny || targetNorms.some((t) => tokensMatchExact(p.name, t))) {
             matchedLoc = p.location;
             break;

@@ -522,6 +522,40 @@ export interface JamlPreset {
 
 export const JAML_PRESETS: JamlPreset[] = [
   {
+    id: 'nat-blueprint-loop',
+    label: 'Nat Blueprint Loop (YAML should)',
+    deck: 'Ghost',
+    stake: 'White',
+    yaml: `name: Nat Blueprint Loop
+deck: Ghost
+stake: White
+should:
+  - legendaryJoker: Perkeo
+    antes: [0, 1, 2, 3]
+    score: 20
+  - spectralCard: Ankh
+    antes: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    score: 14
+  - joker: DietCola
+    antes: [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    score: 18
+  - tag: NegativeTag
+    antes: [9, 10, 11, 12, 13]
+    score: 22
+  - joker: OopsAll6s
+    antes: [8, 9, 10, 11, 12, 13, 14, 15, 16]
+    score: 16
+  - joker: Blueprint
+    antes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    score: 12
+  - joker: Brainstorm
+    antes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    score: 10
+  - joker: Showman
+    antes: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    score: 8`,
+  },
+  {
     id: 'oracle-ghost-perkeo-bp',
     label: 'Ghost Perkeo + Blueprint (Oracle)',
     deck: 'Ghost',
@@ -533,8 +567,8 @@ must:
   - legendaryJoker: Perkeo
     antes: [1]
     sources:
-      arcanaPacks: [1, 2]
-      spectralPacks: [1, 2]
+      arcanaPacks: [0, 1]
+      spectralPacks: [0, 1]
 should:
   - joker: Blueprint
     antes: [1, 2]
@@ -576,7 +610,7 @@ must:
   - joker: Blueprint
     antes: [1]
     sources:
-      shopItems: [1, 2, 3, 4]
+      shopItems: [0, 1, 2, 3]
 should:
   - joker: Brainstorm
     antes: [1, 2]
@@ -594,7 +628,7 @@ must:
   - joker: WeeJoker
     antes: [1]
     sources:
-      shopItems: [1, 2, 3, 4]
+      shopItems: [0, 1, 2, 3]
 should:
   - joker: Hack
     antes: [1, 2]
@@ -675,7 +709,7 @@ must:
     edition: Polychrome
     antes: [1]
     sources:
-      shopItems: [1, 2, 3, 4]`,
+      shopItems: [0, 1, 2, 3]`,
   },
   {
     id: 'erratic-aces',
