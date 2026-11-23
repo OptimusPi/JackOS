@@ -109,6 +109,18 @@ import {
   getMotelyError,
 } from '../../lib/motelySprites';
 import {
+  DEFAULT_MAX_ANTE,
+  DEFAULT_SHOP_DEPTH,
+  ShopDepthMode,
+  buildJamlyzerAnalyzePayload,
+  buildShareUrl,
+  jamlyzerEventRolls,
+  parseJackOsUrl,
+  parseSeedPaste,
+  shopDepthToSlots,
+} from '../../lib/jamlyzerConfig';
+import { SeedShouldHitStrip } from './SeedShouldHitStrip';
+import {
   ClauseSection,
   EditableClauseDraft,
   EditableClauseKind,
@@ -706,14 +718,21 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
 
   const initialQuery = useMemo(() => {
     if (typeof window === 'undefined') return null;
-    const params = new URLSearchParams(window.location.search);
-    const pathMatch = window.location.pathname.match(/^\/seed\/([A-Za-z0-9_-]{1,24})\/?$/i);
-    const pathSeed = pathMatch ? pathMatch[1].trim().toUpperCase() : null;
-    const seed = pathSeed || params.get('seed')?.trim().toUpperCase() || null;
-    const qDeck = params.get('deck')?.trim() || null;
-    const qStake = params.get('stake')?.trim() || null;
-    const qAnte = params.get('ante') ? Number(params.get('ante')) : null;
-    return { seed, deck: qDeck, stake: qStake, ante: qAnte };
+    const parsed = parseJackOsUrl(window.location.search, window.location.pathname);
+  const pileSeed =
+      parsed.seeds.length > 0
+        ? parsed.seeds[Math.min(parsed.seedIndex, parsed.seeds.length - 1)]
+        : parsed.legacySeed;
+    const seed = pileSeed || null;
+    const qDeck = parsed.deck;
+    const qStake = parsed.stake;
+    const qAnte = new URLSearchParams(window.location.search).get('ante')
+      ? Number(new URLSearchParams(window.location.search).get('ante'))
+      : null;
+    const urlSeeds = parsed.seeds;
+    const urlSeedIndex = parsed.seedIndex;
+    const urlMaxAnte = parsed.maxAnte;
+    return { seed, deck: qDeck, stake: qStake, ante: qAnte, urlSeeds, urlSeedIndex, urlMaxAnte };
   }, []);
 
   // Filter & Designer state
@@ -727,7 +746,9 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
   );
   const [parsedFilter, setParsedFilter] = useState<JamlFilter | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [loadedJamlSeeds, setLoadedJamlSeeds] = useState<string[]>([]);
+  const [loadedJamlSeeds, setLoadedJamlSeeds] = useState<string[]>(() =>
+    initialQuery?.urlSeeds && initialQuery.urlSeeds.length > 0 ? initialQuery.urlSeeds : []
+  );
   const [loadedJamlName, setLoadedJamlName] = useState<string | null>(null);
   const [isDragOverJaml, setIsDragOverJaml] = useState<boolean>(false);
   const [useMonacoOnMobile, setUseMonacoOnMobile] = useState<boolean>(() =>
@@ -785,12 +806,25 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     initialQuery?.ante && initialQuery.ante >= 0 && initialQuery.ante <= 39 ? initialQuery.ante : 1
   );
   const [analyzerMaxAnte, setAnalyzerMaxAnte] = useState<AnteDepthOption>(() => {
-    const a = initialQuery?.ante ?? 1;
+    if (initialQuery?.urlMaxAnte) {
+      const m = initialQuery.urlMaxAnte;
+      if (m >= 39) return 39;
+      if (m >= 25) return 25;
+      if (m >= 16) return 16;
+      return 8;
+    }
+    const a = initialQuery?.ante ?? DEFAULT_MAX_ANTE;
     if (a > 25) return 39;
     if (a > 16) return 25;
     if (a > 8) return 16;
-    return 8;
+    return DEFAULT_MAX_ANTE >= 16 ? 16 : 8;
   });
+  const [analyzerShopDepth, setAnalyzerShopDepth] = useState<ShopDepthMode>(DEFAULT_SHOP_DEPTH);
+  const [seedPilePaste, setSeedPilePaste] = useState<string>(() =>
+    initialQuery?.urlSeeds && initialQuery.urlSeeds.length > 1
+      ? initialQuery.urlSeeds.join(', ')
+      : ''
+  );
   const lastAnalyzedSeedRef = useRef<string | null>(null);
   const [analyzerError, setAnalyzerError] = useState<string | null>(null);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
@@ -1004,31 +1038,31 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
         .split(/[,\s\n]+/)
         .map((s) => s.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, ''))
         .filter(Boolean);
-      const cleanSeed = multiTokens[0] ?? '';
+      const dedupedMulti = Array.from(new Set(multiTokens));
+      const cleanSeed = dedupedMulti[0] ?? '';
       if (!cleanSeed) {
         setAnalyzerError('Enter a seed to analyze.');
         return;
       }
-      if (multiTokens.length > 1) {
-        const deduped = Array.from(new Set(multiTokens));
-        setLoadedJamlSeeds(deduped);
+      if (dedupedMulti.length > 1) {
+        setLoadedJamlSeeds(dedupedMulti);
         setLoadedJamlName(`Multi-Seed Queue`);
+        setSeedPilePaste(dedupedMulti.join(', '));
       }
 
       const targetMaxAnte = maxAnteOverride ?? analyzerMaxAnte;
       setAnalyzerError(null);
       try {
-        const payload: Record<string, unknown> = {
-          deck: targetDeck,
-          stake: targetStake,
-          seeds: [cleanSeed],
-        };
-        if (targetMaxAnte > 8) {
-          payload.should = [{ joker: 'Any', antes: [0, targetMaxAnte] }];
-        }
+        const payload = buildJamlyzerAnalyzePayload(
+          targetDeck,
+          targetStake,
+          [cleanSeed],
+          targetMaxAnte
+        );
         const cfg = JamlConfigLoader.fromJaml(JSON.stringify(payload));
         const mw = withOverride ?? buildMotelyWith();
-        const list = MotelyJamlyzer.analyze(cfg, 16, 15, mw);
+        const shopSlots = shopDepthToSlots(analyzerShopDepth);
+        const list = MotelyJamlyzer.analyze(cfg, jamlyzerEventRolls(targetMaxAnte), shopSlots, mw);
         if (!list.length) {
           setAnalyzerError('MotelyJamlyzer returned no results for that seed.');
           return;
@@ -1052,21 +1086,44 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
           shopByAnte,
         });
         if (syncUrl && typeof window !== 'undefined') {
-          const qs = new URLSearchParams();
-          if (targetDeck !== 'Ghost') qs.set('deck', targetDeck);
-          if (targetStake !== 'White') qs.set('stake', targetStake);
-          const querySuffix = qs.toString() ? `?${qs.toString()}` : '';
-          window.history.replaceState(
-            {},
-            '',
-            `/seed/${encodeURIComponent(cleanSeed)}${querySuffix}`
-          );
+          const queue =
+            loadedJamlSeeds.length > 1
+              ? loadedJamlSeeds
+              : dedupedMulti.length > 1
+              ? dedupedMulti
+              : [];
+          const origin = window.location.origin;
+          if (queue.length > 1) {
+            const idx = Math.max(0, queue.indexOf(cleanSeed));
+            window.history.replaceState(
+              {},
+              '',
+              buildShareUrl(origin, {
+                seeds: queue,
+                seedIndex: idx,
+                deck: targetDeck,
+                stake: targetStake,
+                maxAnte: targetMaxAnte,
+              })
+            );
+          } else {
+            const qs = new URLSearchParams();
+            if (targetDeck !== 'Ghost') qs.set('deck', `${targetDeck} Deck`);
+            if (targetStake !== 'White') qs.set('stake', `${targetStake} Stake`);
+            if (targetMaxAnte !== DEFAULT_MAX_ANTE) qs.set('maxAnte', String(targetMaxAnte));
+            const querySuffix = qs.toString() ? `?${qs.toString()}` : '';
+            window.history.replaceState(
+              {},
+              '',
+              `/seed/${encodeURIComponent(cleanSeed)}${querySuffix}`
+            );
+          }
         }
       } catch (e) {
         setAnalyzerError(getMotelyError(e));
       }
     },
-    [deck, stake, analyzerMaxAnte, buildMotelyWith]
+    [deck, stake, analyzerMaxAnte, analyzerShopDepth, buildMotelyWith, loadedJamlSeeds]
   );
 
   const embeddedJamlSeeds = useMemo(
@@ -1175,12 +1232,32 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     analyzeSeedNow(embeddedJamlSeeds[0], deck, stake, undefined, true);
   }, [embeddedJamlSeeds, parsedFilter, deck, stake, analyzeSeedNow]);
 
+  const handleLoadSeedPile = useCallback(() => {
+    const seeds = parseSeedPaste(seedPilePaste);
+    if (seeds.length === 0) {
+      setAnalyzerError('Paste at least one seed (comma, space, or newline separated).');
+      return;
+    }
+    playRerollSweep();
+    setLoadedJamlSeeds(seeds);
+    setLoadedJamlName(seeds.length > 1 ? 'Seed pile' : '');
+    analyzeSeedNow(seeds[0], deck, stake, undefined, true);
+  }, [seedPilePaste, deck, stake, analyzeSeedNow]);
+
+  useEffect(() => {
+    if (initialQuery?.urlSeeds && initialQuery.urlSeeds.length > 1) {
+      setLoadedJamlName('Shared seed pile');
+    }
+  }, [initialQuery?.urlSeeds]);
+
   useEffect(() => {
     if (bootState === 'ready' && !analyzed) {
       analyzeSeedNow(
         initialQuery?.seed || 'ALEEB',
         initialQuery?.deck || 'Ghost',
-        initialQuery?.stake || 'White'
+        initialQuery?.stake || 'White',
+        undefined,
+        Boolean(initialQuery?.seed)
       );
     }
   }, [bootState, analyzed, analyzeSeedNow, initialQuery]);
@@ -1233,20 +1310,18 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     setIsLoadingMore(true);
     setAnalyzerError(null);
     try {
-      const payload: Record<string, unknown> = {
-        deck: analyzed.deck,
-        stake: analyzed.stake,
-        seeds: [analyzed.seed],
-      };
-      if (analyzerMaxAnte > 8) {
-        payload.should = [{ joker: 'Any', antes: [0, analyzerMaxAnte] }];
-      }
+      const payload = buildJamlyzerAnalyzePayload(
+        analyzed.deck,
+        analyzed.stake,
+        [analyzed.seed],
+        analyzerMaxAnte
+      );
       const cfg = JamlConfigLoader.fromJaml(JSON.stringify(payload));
       const nextList = MotelyJamlyzer.resume(
         cfg,
         analyzed.result.streamStates,
-        16,
-        15,
+        jamlyzerEventRolls(analyzerMaxAnte),
+        shopDepthToSlots(analyzerShopDepth),
         buildMotelyWith()
       );
       if (nextList.length > 0) {
@@ -1742,11 +1817,26 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       if (list.length < 2) return;
       const curIdx = list.indexOf(analyzed?.seed ?? '');
       const baseIdx = curIdx >= 0 ? curIdx : 0;
-      const nextSeed = list[(baseIdx + delta + list.length) % list.length];
+      const nextIdx = (baseIdx + delta + list.length) % list.length;
+      const nextSeed = list[nextIdx];
       playCardClick(delta > 0 ? 1.12 : 0.94);
       analyzeSeedNow(nextSeed, deck, stake, undefined, true);
+      if (typeof window !== 'undefined' && list.length > 1) {
+        const origin = window.location.origin;
+        window.history.replaceState(
+          {},
+          '',
+          buildShareUrl(origin, {
+            seeds: list,
+            seedIndex: nextIdx,
+            deck,
+            stake,
+            maxAnte: analyzerMaxAnte,
+          })
+        );
+      }
     },
-    [activeSeedQueue.seeds, analyzed?.seed, analyzeSeedNow, deck, stake]
+    [activeSeedQueue.seeds, analyzed?.seed, analyzeSeedNow, deck, stake, analyzerMaxAnte]
   );
 
   useEffect(() => {
@@ -2415,6 +2505,33 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                     <Settings2 size={13} />
                   </BalButton>
                 </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <BalTextArea
+                    label="Seed pile (paste or URL)"
+                    mono
+                    rows={2}
+                    value={seedPilePaste}
+                    onChange={(e) => setSeedPilePaste(e.target.value)}
+                    placeholder="EFPEEOX5, ALEEB — or load ?seeds= from the address bar"
+                  />
+                  <BalButton tone="slate" size="xs" onClick={handleLoadSeedPile}>
+                    <Link2 size={13} />
+                    <span>Load pile into analyzer</span>
+                  </BalButton>
+                </div>
+
+                {analyzed && (
+                  <SeedShouldHitStrip
+                    activeFilter={parsedFilter}
+                    result={analyzed.result}
+                    shopByAnte={analyzed.shopByAnte}
+                    onJump={(ante) => {
+                      setSelectedAnte(ante);
+                      setAnalyzerSubTab('shop');
+                    }}
+                  />
+                )}
 
                 {/* Go Next Multi-Seed Flyer */}
                 {activeSeedQueue.seeds.length > 1 && (
@@ -4660,13 +4777,45 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                         analyzed.deck,
                         analyzed.stake,
                         undefined,
-                        false,
+                        true,
                         depth
                       );
                     }
                   }}
                 >
                   Ante {depth}
+                </BalButton>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] text-[var(--j-text-muted)]">Shop slots per ante</span>
+            <div className="grid grid-cols-4 gap-2">
+              {(
+                [
+                  ['deep', 'Deep (engine)'],
+                  ['36', '36 slots'],
+                  ['50', '50 slots'],
+                  ['15', '15 (legacy)'],
+                ] as const
+              ).map(([mode, label]) => (
+                <BalButton
+                  key={mode}
+                  tone={analyzerShopDepth === mode ? 'gold' : 'slate'}
+                  size="sm"
+                  block
+                  active={analyzerShopDepth === mode}
+                  onClick={() => {
+                    if (analyzerShopDepth === mode) return;
+                    playRerollSweep();
+                    setAnalyzerShopDepth(mode);
+                    if (analyzed) {
+                      analyzeSeedNow(analyzed.seed, analyzed.deck, analyzed.stake, undefined, true);
+                    }
+                  }}
+                >
+                  {label}
                 </BalButton>
               ))}
             </div>
