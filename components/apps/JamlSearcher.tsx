@@ -1173,7 +1173,16 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
         setSearchMode('seedlist');
         setActiveTab('analyzer');
         setAnalyzerSubTab('efficiency');
-        analyzeSeedNow(extractedSeeds[0], nextDeck, nextStake, undefined, true);
+        analyzeSeedNow(
+          extractedSeeds[0],
+          nextDeck,
+          nextStake,
+          undefined,
+          true,
+          undefined,
+          undefined,
+          extractedSeeds.length > 1 ? extractedSeeds : null
+        );
         showCleanupFeedback(
           `Loaded ${cleanFileName}: ${extractedSeeds.length} seed${extractedSeeds.length > 1 ? 's' : ''} ready in Analyzer`
         );
@@ -1235,7 +1244,16 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     setSeedListText(embeddedJamlSeeds.join(', '));
     setActiveTab('analyzer');
     setAnalyzerSubTab('efficiency');
-    analyzeSeedNow(embeddedJamlSeeds[0], deck, stake, undefined, true);
+    analyzeSeedNow(
+      embeddedJamlSeeds[0],
+      deck,
+      stake,
+      undefined,
+      true,
+      undefined,
+      undefined,
+      embeddedJamlSeeds.length > 1 ? embeddedJamlSeeds : null
+    );
   }, [embeddedJamlSeeds, parsedFilter, deck, stake, analyzeSeedNow]);
 
   const handleLoadSeedPile = useCallback(() => {
@@ -1249,13 +1267,16 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
     playRerollSweep();
     const pileDeck = extras.deck ?? deck;
     const pileStake = extras.stake ?? stake;
-    if (extras.deck) setDeck(extras.deck);
-    if (extras.stake) setStake(extras.stake);
+    setDeck(pileDeck);
+    setStake(pileStake);
+    commitFilterUpdate((f) =>
+      updateFilterDeckStake(f, pileDeck as MotelyDeckName, pileStake as MotelyStakeName)
+    );
+    let depthOverride: AnteDepthOption | undefined;
     if (extras.maxAnte) {
       const m = extras.maxAnte;
-      const depth: AnteDepthOption =
-        m >= 39 ? 39 : m >= 25 ? 25 : m >= 16 ? 16 : 8;
-      setAnalyzerMaxAnte(depth);
+      depthOverride = m >= 39 ? 39 : m >= 25 ? 25 : m >= 16 ? 16 : 8;
+      setAnalyzerMaxAnte(depthOverride);
     }
     setLoadedJamlSeeds(seeds);
     setLoadedJamlName(seeds.length > 1 ? 'Seed pile' : '');
@@ -1268,19 +1289,11 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       pileStake,
       undefined,
       true,
-      extras.maxAnte
-        ? ((extras.maxAnte >= 39
-            ? 39
-            : extras.maxAnte >= 25
-            ? 25
-            : extras.maxAnte >= 16
-            ? 16
-            : 8) as AnteDepthOption)
-        : undefined,
+      depthOverride,
       undefined,
       seeds.length > 1 ? seeds : null
     );
-  }, [seedPilePaste, deck, stake, analyzeSeedNow]);
+  }, [seedPilePaste, deck, stake, analyzeSeedNow, commitFilterUpdate]);
 
   useEffect(() => {
     if (initialQuery?.urlSeeds && initialQuery.urlSeeds.length > 1) {
@@ -1290,12 +1303,19 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
 
   useEffect(() => {
     if (bootState === 'ready' && !analyzed) {
+      const urlPile =
+        initialQuery?.urlSeeds && initialQuery.urlSeeds.length > 1
+          ? initialQuery.urlSeeds
+          : null;
       analyzeSeedNow(
         initialQuery?.seed || 'ALEEB',
         initialQuery?.deck || 'Ghost',
         initialQuery?.stake || 'White',
         undefined,
-        Boolean(initialQuery?.seed)
+        Boolean(initialQuery?.seed || urlPile),
+        undefined,
+        undefined,
+        urlPile
       );
     }
   }, [bootState, analyzed, analyzeSeedNow, initialQuery]);

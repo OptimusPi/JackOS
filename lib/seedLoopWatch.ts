@@ -70,6 +70,14 @@ export function scanLoopWatchHits(
           kind: 'joker',
         });
       }
+      if (WATCH_SPECTRALS.has(dec.name)) {
+        hits.push({
+          label: dec.name,
+          ante: a.ante,
+          location: `shop slot ${idx}`,
+          kind: dec.name === 'The Soul' ? 'soul' : 'spectral',
+        });
+      }
     });
 
     a.packs.forEach((pk, pIdx) => {
