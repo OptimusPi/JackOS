@@ -573,26 +573,26 @@ export function buildTypedClause(params: {
   // Real typed source blocks from motely-wasm/jaml
   if (kind === 'legendaryJoker' && sourcePreset === 'soulPacks') {
     const src: JamlLegendaryJokerSourceConfig = {
-      arcanaPacks: [1, 2],
-      spectralPacks: [1, 2],
+      arcanaPacks: [0, 1],
+      spectralPacks: [0, 1],
     };
     raw.sources = src;
   } else if ((kind === 'joker' || kind === 'rareJoker') && sourcePreset !== 'any') {
     const src: JamlJokerSourceConfig = {};
-    if (sourcePreset === 'shop4') src.shopItems = [1, 2, 3, 4];
-    else if (sourcePreset === 'shop10') src.shopItems = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    else if (sourcePreset === 'boosterPacks') src.boosterPacks = [1, 2, 3, 4];
+    if (sourcePreset === 'shop4') src.shopItems = [0, 1, 2, 3];
+    else if (sourcePreset === 'shop10') src.shopItems = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    else if (sourcePreset === 'boosterPacks') src.boosterPacks = [0, 1, 2, 3];
     else if (sourcePreset === 'judgementWraith') {
       src.judgement = [1, 2];
       src.wraith = [1, 2];
     }
     if (Object.keys(src).length > 0) raw.sources = src;
   } else if ((kind === 'tarotCard' || kind === 'spectralCard') && sourcePreset === 'shop4') {
-    raw.sources = { shopItems: [1, 2, 3, 4] };
+    raw.sources = { shopItems: [0, 1, 2, 3] };
   } else if ((kind === 'tarotCard' || kind === 'spectralCard') && sourcePreset === 'shop10') {
-    raw.sources = { shopItems: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] };
+    raw.sources = { shopItems: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] };
   } else if ((kind === 'tarotCard' || kind === 'spectralCard') && sourcePreset === 'boosterPacks') {
-    raw.sources = { boosterPacks: [1, 2, 3, 4] };
+    raw.sources = { boosterPacks: [0, 1, 2, 3] };
   }
 
   if (section === 'should') {
@@ -805,7 +805,7 @@ function entryMatchesSources(
   );
   if (keys.length === 0) return true;
 
-  const slot = entry.slot ?? 1;
+  const slot = entry.slot ?? 0;
   const kind = entry.sourceKind;
 
   if (kind === 'shop') {

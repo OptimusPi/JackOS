@@ -313,12 +313,13 @@ export const BlueprintRunGuide: React.FC<BlueprintRunGuideProps> = ({
     }
 
     const locationOrder = (loc: string): number => {
+      const l = loc.toLowerCase();
       if (loc === 'Ante Voucher') return 0;
-      if (loc.startsWith('Shop #')) return 1;
-      if (loc.startsWith('Pack #')) return 2;
-      if (loc.toLowerCase().includes('soul pack')) return 3;
-      if (loc.toLowerCase().includes('blind tag')) return -1;
-      return 4;
+      if (l.includes('blind tag')) return 1;
+      if (l.startsWith('shop slot')) return 2;
+      if (l.startsWith('pack slot')) return 3;
+      if (l.includes('soul pack')) return 4;
+      return 5;
     };
     generated.sort(
       (a, b) =>

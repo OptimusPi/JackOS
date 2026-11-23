@@ -130,14 +130,71 @@ export function buildShareUrl(origin: string, opts: {
   return `${origin}/?${params.toString()}`;
 }
 
-/** Parse multi-seed paste: newline, comma, or space separated. */
+const SEED_TOKEN = /^[A-Za-z0-9_-]{1,24}$/;
+
+function cleanSeedToken(s: string): string {
+  return s.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+}
+
+/** Parse multi-seed paste: newline, comma, space, or a full share URL. */
 export function parseSeedPaste(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const u = new URL(trimmed);
+      const pile = u.searchParams.get('seeds');
+      if (pile) return parseSeedPaste(pile);
+      const pathMatch = u.pathname.match(/^\/seed\/([A-Za-z0-9_-]{1,24})\/?$/i);
+      if (pathMatch) {
+        const tok = cleanSeedToken(pathMatch[1]);
+        return tok && SEED_TOKEN.test(tok) ? [tok] : [];
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
   return Array.from(
     new Set(
-      raw
+      trimmed
         .split(/[,\s\n]+/)
-        .map((s) => s.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, ''))
-        .filter(Boolean)
+        .map(cleanSeedToken)
+        .filter((s) => s.length > 0 && SEED_TOKEN.test(s))
     )
   );
+}
+
+export interface SeedPasteExtras {
+  deck?: string;
+  stake?: string;
+  maxAnte?: number;
+  seedIndex?: number;
+}
+
+/** When paste is a JackOS share link, pull deck/stake/maxAnte/seedIndex too. */
+export function parseSeedPasteWithMeta(raw: string): { seeds: string[]; extras: SeedPasteExtras } {
+  const trimmed = raw.trim();
+  const extras: SeedPasteExtras = {};
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const u = new URL(trimmed);
+      const deck = normalizeDeckParam(u.searchParams.get('deck'));
+      const stake = normalizeStakeParam(u.searchParams.get('stake'));
+      const maxAnteRaw = u.searchParams.get('maxAnte');
+      const idxRaw = u.searchParams.get('seedIndex');
+      if (deck) extras.deck = deck;
+      if (stake) extras.stake = stake;
+      if (maxAnteRaw != null && Number.isFinite(Number(maxAnteRaw))) {
+        extras.maxAnte = Math.min(39, Math.max(8, Math.floor(Number(maxAnteRaw))));
+      }
+      if (idxRaw != null && Number.isFinite(Number(idxRaw))) {
+        extras.seedIndex = Math.max(0, Math.floor(Number(idxRaw)));
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return { seeds: parseSeedPaste(trimmed), extras };
 }

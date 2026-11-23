@@ -117,6 +117,7 @@ import {
   jamlyzerEventRolls,
   parseJackOsUrl,
   parseSeedPaste,
+  parseSeedPasteWithMeta,
   shopDepthToSlots,
 } from '../../lib/jamlyzerConfig';
 import { SeedShouldHitStrip } from './SeedShouldHitStrip';
@@ -341,8 +342,8 @@ const ANTE_RANGE_PRESETS: readonly { value: string; label: string; nums: number[
 
 const SOURCE_PRESET_ITEMS: readonly { value: SourcePresetKey; label: string }[] = [
   { value: 'any', label: 'Any Source' },
-  { value: 'shop4', label: 'Shop Slots 1–4' },
-  { value: 'shop10', label: 'Shop Slots 1–10' },
+  { value: 'shop4', label: 'Shop slots 0–3' },
+  { value: 'shop10', label: 'Shop slots 0–9' },
   { value: 'soulPacks', label: 'Arcana / Spectral Packs' },
   { value: 'boosterPacks', label: 'Booster Packs 1–4' },
   { value: 'judgementWraith', label: 'Judgement / Wraith' },
@@ -1032,7 +1033,9 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       targetStake: string = stake,
       withOverride?: MotelyWith,
       syncUrl: boolean = false,
-      maxAnteOverride?: AnteDepthOption
+      maxAnteOverride?: AnteDepthOption,
+      shopDepthOverride?: ShopDepthMode,
+      urlQueueOverride?: string[] | null
     ) => {
       const multiTokens = rawSeed
         .split(/[,\s\n]+/)
@@ -1051,6 +1054,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
       }
 
       const targetMaxAnte = maxAnteOverride ?? analyzerMaxAnte;
+      const targetShopDepth = shopDepthOverride ?? analyzerShopDepth;
       setAnalyzerError(null);
       try {
         const payload = buildJamlyzerAnalyzePayload(
@@ -1061,7 +1065,7 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
         );
         const cfg = JamlConfigLoader.fromJaml(JSON.stringify(payload));
         const mw = withOverride ?? buildMotelyWith();
-        const shopSlots = shopDepthToSlots(analyzerShopDepth);
+        const shopSlots = shopDepthToSlots(targetShopDepth);
         const list = MotelyJamlyzer.analyze(cfg, jamlyzerEventRolls(targetMaxAnte), shopSlots, mw);
         if (!list.length) {
           setAnalyzerError('MotelyJamlyzer returned no results for that seed.');
@@ -1087,10 +1091,12 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
         });
         if (syncUrl && typeof window !== 'undefined') {
           const queue =
-            loadedJamlSeeds.length > 1
-              ? loadedJamlSeeds
+            urlQueueOverride && urlQueueOverride.length > 1
+              ? urlQueueOverride
               : dedupedMulti.length > 1
               ? dedupedMulti
+              : loadedJamlSeeds.length > 1
+              ? loadedJamlSeeds
               : [];
           const origin = window.location.origin;
           if (queue.length > 1) {
@@ -1233,15 +1239,47 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
   }, [embeddedJamlSeeds, parsedFilter, deck, stake, analyzeSeedNow]);
 
   const handleLoadSeedPile = useCallback(() => {
-    const seeds = parseSeedPaste(seedPilePaste);
+    const { seeds, extras } = parseSeedPasteWithMeta(seedPilePaste);
     if (seeds.length === 0) {
-      setAnalyzerError('Paste at least one seed (comma, space, or newline separated).');
+      setAnalyzerError(
+        'Paste seeds (comma, space, newline) or a full ?seeds= share link from JackOS or Blueprint.'
+      );
       return;
     }
     playRerollSweep();
+    const pileDeck = extras.deck ?? deck;
+    const pileStake = extras.stake ?? stake;
+    if (extras.deck) setDeck(extras.deck);
+    if (extras.stake) setStake(extras.stake);
+    if (extras.maxAnte) {
+      const m = extras.maxAnte;
+      const depth: AnteDepthOption =
+        m >= 39 ? 39 : m >= 25 ? 25 : m >= 16 ? 16 : 8;
+      setAnalyzerMaxAnte(depth);
+    }
     setLoadedJamlSeeds(seeds);
     setLoadedJamlName(seeds.length > 1 ? 'Seed pile' : '');
-    analyzeSeedNow(seeds[0], deck, stake, undefined, true);
+    setSeedPilePaste(seeds.join(', '));
+    const startIdx = Math.min(extras.seedIndex ?? 0, seeds.length - 1);
+    const startSeed = seeds[startIdx] ?? seeds[0];
+    analyzeSeedNow(
+      startSeed,
+      pileDeck,
+      pileStake,
+      undefined,
+      true,
+      extras.maxAnte
+        ? ((extras.maxAnte >= 39
+            ? 39
+            : extras.maxAnte >= 25
+            ? 25
+            : extras.maxAnte >= 16
+            ? 16
+            : 8) as AnteDepthOption)
+        : undefined,
+      undefined,
+      seeds.length > 1 ? seeds : null
+    );
   }, [seedPilePaste, deck, stake, analyzeSeedNow]);
 
   useEffect(() => {
@@ -4811,7 +4849,15 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
                     playRerollSweep();
                     setAnalyzerShopDepth(mode);
                     if (analyzed) {
-                      analyzeSeedNow(analyzed.seed, analyzed.deck, analyzed.stake, undefined, true);
+                      analyzeSeedNow(
+                        analyzed.seed,
+                        analyzed.deck,
+                        analyzed.stake,
+                        undefined,
+                        true,
+                        undefined,
+                        mode
+                      );
                     }
                   }}
                 >
@@ -5116,7 +5162,7 @@ must:
   - joker: WeeJoker
     antes: [1]
     sources:
-      shopItems: [1, 2, 3, 4]
+      shopItems: [0, 1, 2, 3]
 should:
   - joker: Hack
     antes: [1, 2]
