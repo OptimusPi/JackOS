@@ -1086,14 +1086,19 @@ export const JamlSearcher: React.FC<JamlSearcherProps> = ({
           shopByAnte,
         });
         if (opts.syncUrl && typeof window !== 'undefined') {
-          const queue =
-            opts.queue && opts.queue.length > 1
-              ? opts.queue
-              : dedupedMulti.length > 1
-              ? dedupedMulti
-              : loadedJamlSeeds.length > 1
-              ? loadedJamlSeeds
-              : null;
+          // Prefer an explicit queue / multi-seed input. Only reuse loadedJamlSeeds when
+          // it already contains this seed — never rewrite the address to a stale pile.
+          let queue: string[] | null = null;
+          if (opts.queue && opts.queue.length > 1) {
+            queue = opts.queue;
+          } else if (dedupedMulti.length > 1) {
+            queue = dedupedMulti;
+          } else if (
+            loadedJamlSeeds.length > 1 &&
+            loadedJamlSeeds.includes(cleanSeed)
+          ) {
+            queue = loadedJamlSeeds;
+          }
           syncAnalyzerLocation({
             origin: window.location.origin,
             seed: cleanSeed,
