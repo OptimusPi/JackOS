@@ -20,7 +20,7 @@ const run = async () => {
     { waitUntil: 'networkidle' }
   );
   await page.waitForTimeout(12000);
-  const ante10 = page.getByRole('button', { name: /^10$/ }).first();
+  const ante10 = page.getByRole('button', { name: /A10\b/ }).first();
   await assertVisible(page, ante10, 'Ante 10 rail button');
   await ante10.click();
   await page.waitForTimeout(400);
